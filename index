@@ -6,10 +6,9 @@
 <title>D365 BC — DMK Group User Manual v3</title>
 <script>
 (async function loadImagesFromSupabase() {
-  <script>
   window._SUPABASE_URL      = 'https://iwopfnmggkptfyxnughr.supabase.co';
   window._SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3b3Bmbm1nZ2twdGZ5eG51Z2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NDU5NjUsImV4cCI6MjA5MjMyMTk2NX0.xz-OQAja8kFjqQEZJ5gkBApOCXV6P7GVpaSvT8RI6tg';
-</script>  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/step_images?select=id,image_url`,
