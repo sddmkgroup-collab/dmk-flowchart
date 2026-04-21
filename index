@@ -4,17 +4,10 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#0062ff">
 <title>D365 BC — DMK Group User Manual v3</title>
-<!-- ══ SUPABASE CONFIG ══
-     Ganti nilai di bawah dengan kredensial Supabase Anda,
-     ATAU set sebagai environment variable di Vercel
-     (NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY)
-     dan server-side inject saat build.
-     Untuk standalone HTML: edit langsung nilai berikut.
--->
 <script>
 (async function loadImagesFromSupabase() {
-  const SUPABASE_URL      = window._SUPABASE_URL;
-  const SUPABASE_ANON_KEY = window._SUPABASE_ANON_KEY;
+  const SUPABASE_URL      = window._https://iwopfnmggkptfyxnughr.supabase.co;
+  const SUPABASE_ANON_KEY = window._eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3b3Bmbm1nZ2twdGZ5eG51Z2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NDU5NjUsImV4cCI6MjA5MjMyMTk2NX0.xz-OQAja8kFjqQEZJ5gkBApOCXV6P7GVpaSvT8RI6tg;
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
   try {
     const res = await fetch(
