@@ -2,9 +2,5 @@
   "name": "d365-dmk-flowchart",
   "version": "3.0.0",
   "description": "D365 BC DMK Group User Manual Flowchart App",
-  "scripts": {
-    "dev": "vercel dev",
-    "deploy": "vercel --prod"
-  },
-  "dependencies": {}
+  "scripts": {}
 }
