@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#0062ff">
-<title>D365 — DMK Group User Manual v3</title>
+<title>D365 BC — DMK Group User Manual v3</title>
 
 <script>
 // ═══ SUPABASE CONFIG ═══
@@ -3575,16 +3575,18 @@ function addFlowNodeUI(btn) {
   const wrap = btn.closest('.flow-wrap');
   const svg = wrap.querySelector('svg.flow');
   if (!svg) return;
-  // Open modal to get node text, then append
- function openAddCatModal() {
+  // Store ref for confirmNodeEdit to use
+  window._editingNodeSvg = svg;
+  window._editingNodeWrap = wrap;
+  openAddNodeModal();
+}
+
+function openAddNodeModal() {
   document.getElementById('editing-node-g').value = '__new__';
   document.getElementById('node-line1').value = '';
   document.getElementById('node-line2').value = '';
   document.getElementById('node-color').value = 'fc-blue';
   openModal('modal-add-node');
- }
-  // Store ref
-  window._editingNodeSvg = svg;
 }
 
 function editFlowNodeUI(btn) {
@@ -3988,6 +3990,8 @@ function updateSupabaseStatus(connected) {
     text.textContent = 'Mode Lokal (localStorage)';
   }
 }
+
+function openAddCatModal() {
   document.getElementById('new-cat-name').value = '';
   document.getElementById('new-cat-guide').value = '';
   document.getElementById('new-cat-desc').value = '';
