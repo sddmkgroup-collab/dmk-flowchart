@@ -6,64 +6,9 @@
 <title>D365 BC — DMK Group User Manual v3</title>
 
 <script>
-(async function loadImagesFromSupabase() {
- const SUPABASE_URL ='https://iwopfnmggkptfyxnughr.supabase.co';  
-  const SUPABASE_ANON_KEY ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3b3Bmbm1nZ2twdGZ5eG51Z2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NDU5NjUsImV4cCI6MjA5MjMyMTk2NX0.xz-OQAja8kFjqQEZJ5gkBApOCXV6P7GVpaSvT8RI6tg'; 
-  if (!window._SUPABASE_URL || !window._SUPABASE_ANON_KEY) return;
-  try {
-const res = await fetch(`${window._SUPABASE_URL}/rest/v1/step_images?...`, {
-  headers: { 'apikey': window._SUPABASE_ANON_KEY, ... }
-});
-   if (!res.ok) throw new Error('HTTP ' + res.status);
-
-    const rows = await res.json();
-
-    for (const { id, image_url } of rows) {
-      const el = document.getElementById(`img-${id}`);
-      if (el) {
-        el.src = image_url;
-        el.loading = 'lazy';
-      }
-    }
-    console.log(`✅ ${rows.length} gambar dimuat`);
-  } catch (err) {
-    console.warn('❌ Gagal:', err.message);
-  }
-})();
-
- function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-function handleModalImg(input) {
-  if (!input.files?.[0]) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    document.getElementById('modal-prev').src = e.target.result;
-    window._modalImgData = e.target.result;
-  };
-  reader.readAsDataURL(input.files[0]);
-}
-function saveModalStep() {
-  const sid   = document.getElementById('modal-sid').value;
-  const label = document.getElementById('modal-lbl').value;
-  const desc  = document.getElementById('modal-dsc').value;
-  const lblEl = document.getElementById('lbl-' + sid);
-  const dscEl = document.getElementById('dsc-' + sid);
-  if (lblEl) lblEl.innerHTML = label;
-  if (dscEl) dscEl.innerHTML = desc;
-  if (window._modalImgData) {
-    const imgEl = document.getElementById('img-' + sid);
-    if (imgEl) imgEl.src = window._modalImgData;
-    _pendingImgs[sid] = window._modalImgData;
-    window._modalImgData = null;
-  }
-  saveAll();
-  closeModal('modal-step-edit');
-  showToast('✓ Langkah diperbarui');
-}
+// ═══ SUPABASE CONFIG ═══
+window._SUPABASE_URL      = 'https://iwopfnmggkptfyxnughr.supabase.co';
+window._SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3b3Bmbm1nZ2twdGZ5eG51Z2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NDU5NjUsImV4cCI6MjA5MjMyMTk2NX0.xz-OQAja8kFjqQEZJ5gkBApOCXV6P7GVpaSvT8RI6tg';
 </script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -4131,7 +4076,7 @@ function confirmAddCategory() {
 // EDITOR PAGE (dedicated)
 // ═══════════════════════════════════════════════
 function syncEditorModule() {
-  const sel = document.getElementById('editor-module-select');
+  const sel = document.getElementById('editor-module-sel');
   if (!sel) return;
   switchEditorModule(sel.value);
 }
@@ -4193,6 +4138,39 @@ function saveEdits() {
   applyAllSaved(saved);
   showNotice();
   showToast('💾 Semua perubahan tersimpan!');
+}
+
+
+// ═══════════════════════════════════════════════
+// STEP MAP — maps section ID to step IDs (for editor preview sync)
+// ═══════════════════════════════════════════════
+const STEP_MAP = {
+  'curr-daily':   ['cd1','cd2','cd3','cd4'],
+  'curr-adj':     ['ca1','ca2','ca3','ca4','ca5'],
+  'depreciation': ['dep1','dep2','dep3','dep4','dep5','dep6'],
+  'fin-report':   ['fr1','fr2','fr3','fr4'],
+  'pnl':          ['pnl1','pnl2','pnl3'],
+  'vendor':       ['v1','v2','v3','v4','v5','v6','v7'],
+  'po':           ['po1','po2','po3','po4','po5','po6'],
+  'pr':           ['pr1','pr2','pr3','pr4'],
+  'pi':           ['pi1','pi2','pi3','pi4','pi5'],
+  'customer':     ['c1','c2','c3','c4','c5','c6','c7'],
+  'so':           ['so1','so2','so3','so4','so5','so6'],
+  'wh':           ['wh1','wh2','wh3','wh4','wh5','wh6','wh7','wh8'],
+  'si':           ['si1','si2','si3','si4','si5'],
+  'transfer':     ['tr1','tr2','tr3','tr4','tr5'],
+  'production':   ['pr1','prod2','prod3','prod4','prod5'],
+  'item':         ['it1','it2','it3','it4','it5'],
+  'pay-journal':  ['pj1','pj2','pj3','pj4','pj5'],
+};
+
+// ═══════════════════════════════════════════════
+// INIT EDITOR
+// ═══════════════════════════════════════════════
+function initEditor() {
+  // Show first editor module
+  const sel = document.getElementById('editor-module-sel');
+  if (sel) switchEditorModule(sel.value || 'curr-daily');
 }
 
 function saveAll() {
@@ -4441,7 +4419,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Restore custom categories (full new categories)
   restoreCustomCategories();
- initEditor();
+  initEditor();
+
+  // Activate first section on load
+  go('curr-daily');
 });
 </script>
 
