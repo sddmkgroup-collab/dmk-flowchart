@@ -6,7 +6,7 @@
 <title>D365 BC — DMK Group User Manual v3</title>
 
 <script>
-// ═══ SUPABASE CONFIG ═══
+// ═══  CONFIG ═══
 window._SUPABASE_URL      = 'https://iwopfnmggkptfyxnughr.supabase.co';
 window._SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3b3Bmbm1nZ2twdGZ5eG51Z2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NDU5NjUsImV4cCI6MjA5MjMyMTk2NX0.xz-OQAja8kFjqQEZJ5gkBApOCXV6P7GVpaSvT8RI6tg';
 </script>
@@ -4563,6 +4563,112 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 <!-- ══ TOAST ══ -->
 <div class="toast" id="global-toast">✓ Perubahan tersimpan</div>
+
+
+<script>
+// ===== FIX PATCH =====
+
+// STEP MAP FIX
+function getStepElements(stepId){
+  return {
+    row: document.getElementById(`sr-${stepId}`),
+    label: document.getElementById(`lbl-${stepId}`),
+    desc: document.getElementById(`dsc-${stepId}`),
+    img: document.getElementById(`img-${stepId}`)
+  };
+}
+
+// DB CACHE FIX
+let _dbCache = null;
+let _dbReady = false;
+
+async function loadDB(){
+  if(_dbReady) return _dbCache;
+  try{
+    if(typeof fetchDataFromSupabase === 'function'){
+      const data = await fetchDataFromSupabase();
+      _dbCache = data || { menus: [], categories: [] };
+    }else{
+      _dbCache = { menus: [], categories: [] };
+    }
+  }catch(e){
+    console.warn('DB load fail', e);
+    _dbCache = { menus: [], categories: [] };
+  }
+  _dbReady = true;
+  return _dbCache;
+}
+
+function getSaved(){
+  if(!_dbReady) return { menus: [], categories: [] };
+  return _dbCache;
+}
+
+// NAV SECTION FIX
+function ensureNavSection(catKey, catName){
+  let section = document.getElementById(`nav-sec-${catKey}`);
+  if(!section){
+    section = document.createElement('div');
+    section.className = 'nav-section';
+    section.id = `nav-sec-${catKey}`;
+    section.innerHTML = `
+      <div class="nav-label">${catName}</div>
+      <button class="nav-add-menu-btn"
+        onclick="openAddMenuModal('${catKey}','${catName}','blue')">
+        ＋ Tambah Menu
+      </button>
+    `;
+    document.querySelector('.sidebar').appendChild(section);
+  }
+  return section;
+}
+
+// ADD MENU FIX
+function addMenuToCategory(catKey, menu){
+  const section = ensureNavSection(catKey, menu.categoryName || catKey);
+
+  const btn = document.createElement('button');
+  btn.className = 'nav-item';
+  btn.id = `nav-${menu.id}`;
+  btn.onclick = () => go(menu.id);
+  btn.innerHTML = `<span class="nav-dot"></span> ${menu.name}`;
+
+  section.insertBefore(btn, section.querySelector('.nav-add-menu-btn'));
+}
+
+// EDITOR SELECT FIX
+function initEditorSelect(){
+  const select = document.querySelector('.editor-module-select');
+  if(!select) return;
+  select.innerHTML = '';
+  const menus = getSaved().menus || [];
+  menus.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name;
+    select.appendChild(opt);
+  });
+}
+
+// RESTORE FIX
+async function restoreCustomMenus(){
+  const db = await loadDB();
+  (db.categories || []).forEach(cat => {
+    ensureNavSection(cat.key, cat.name);
+  });
+  (db.menus || []).forEach(menu => {
+    addMenuToCategory(menu.category, menu);
+  });
+}
+
+// DOM READY FIX
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadDB();
+  await restoreCustomMenus();
+  initEditorSelect();
+});
+
+</script>
 
 </body>
 </html>
