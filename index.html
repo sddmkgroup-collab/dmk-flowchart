@@ -272,6 +272,12 @@ svg.flow{width:100%;display:block;}
 }
 .modal-input:focus{border-color:var(--dmk-blue);box-shadow:0 0 0 3px rgba(0,98,255,.10);}
 textarea.modal-input{resize:vertical;min-height:72px;line-height:1.6;}
+.modal-image-input{display:block;width:100%;padding:9px 12px;border:1.5px solid var(--border2);border-radius:var(--r-md);background:var(--surface);color:var(--text);font-family:var(--font);}
+.modal-image-preview{width:100%;min-height:120px;border:1.5px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;object-fit:cover;margin-top:10px;}
+.modal-image-preview img{width:100%;height:auto;display:block;}
+.modal-image-preview.empty{color:var(--text3);font-size:12px;text-align:center;padding:16px;}
+.menu-image-preview{width:100%;border:1.5px solid var(--border2);border-radius:var(--r-md);overflow:hidden;box-shadow:var(--shadow-sm);margin-bottom:18px;}
+.menu-image-preview img{width:100%;height:auto;display:block;}
 .modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
 .modal-btn{
   padding:9px 22px;border-radius:var(--r-md);font-size:13px;
@@ -405,24 +411,85 @@ textarea.editor-input{resize:vertical;min-height:68px;line-height:1.55;}
 <!-- SUPABASE CLIENT -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const supabase = window.supabase.createClient(
+const supabaseClient = window.supabase?.createClient(
   window._SUPABASE_URL,
   window._SUPABASE_ANON_KEY
 );
+
+// ===== FUNCTION TO GET CORRECT SUPABASE STORAGE URL =====
+function getSupabaseImageUrl(imagePath) {
+  const BUCKET_NAME = 'step-images';
+  try {
+    if (supabaseClient) {
+      // Generate public URL using Supabase Storage API
+      const { data } = supabaseClient.storage.from(BUCKET_NAME).getPublicUrl(imagePath);
+      if (data?.publicUrl) {
+        return data.publicUrl;
+      }
+    }
+  } catch(e) {
+    console.warn('Error generating storage URL:', e);
+  }
+  
+  // Fallback: construct URL manually if the API fails
+  const baseUrl = window._SUPABASE_URL;
+  if (baseUrl) {
+    return `${baseUrl}/storage/v1/object/public/${BUCKET_NAME}/${imagePath}`;
+  }
+  
+  return '';
+}
+
+// ===== IMAGE ERROR HANDLER =====
+function handleImageError(img) {
+  console.warn('Gambar gagal dimuat:', img.src);
+  
+  // Try alternative paths if image is from Supabase
+  if (img.src && img.src.includes('supabase')) {
+    const filename = img.src.split('/').pop();
+    if (filename && !img.hasAttribute('data-retry')) {
+      img.setAttribute('data-retry', 'true');
+      
+      // Try different possible paths
+      const alternativePaths = [
+        `screenshots/${filename}`,
+        `public/${filename}`,
+        `${filename}`
+      ];
+      
+      for (const path of alternativePaths) {
+        const altUrl = getSupabaseImageUrl(path);
+        if (altUrl && altUrl !== img.src) {
+          console.log('Trying alternative path:', altUrl);
+          img.src = altUrl;
+          img.onerror = null; // Remove error handler temporarily to avoid infinite loop
+          img.onerror = function() { handleImageError(this); };
+          return;
+        }
+      }
+    }
+  }
+  
+  // Add visual indicator for failed image
+  img.style.opacity = '0.5';
+  img.style.border = '2px solid var(--red-bd)';
+  img.alt = '❌ Gambar tidak dapat ditampilkan';
+  img.title = 'URL: ' + img.src;
+}
 
 // ===== NEW DB SYSTEM (APP_DATA JSON) =====
 let _dbCache = { menus: [], categories: [] };
 let _dbReady = false;
 
 async function ensureAppData(){
-  const { data } = await supabase
+  const { data } = await supabaseClient
     .from('app_data')
     .select('*')
     .eq('app_id','main')
     .maybeSingle();
 
   if(!data){
-    await supabase.from('app_data').insert({
+    await supabaseClient.from('app_data').insert({
       app_id: 'main',
       data: { menus: [], categories: [] }
     });
@@ -434,7 +501,7 @@ async function loadDB(){
 
   await ensureAppData();
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('app_data')
     .select('*')
     .eq('app_id','main')
@@ -443,7 +510,9 @@ async function loadDB(){
   if(error){
     console.error('Load gagal', error);
   }else{
-    _dbCache = data.data || { menus: [], categories: [] };
+  const loadedData = data.data || { menus: [], categories: [] };
+  _dbCache.menus = loadedData.menus;
+  _dbCache.categories = loadedData.categories;
   }
 
   _dbReady = true;
@@ -451,7 +520,7 @@ async function loadDB(){
 }
 
 async function saveAppData(){
-  const { error } = await supabase
+  const { error } = await supabaseClient
     .from('app_data')
     .upsert({
       app_id: 'main',
@@ -3907,16 +3976,55 @@ function openAddMenuModal(catKey, catName, color) {
   document.getElementById('add-menu-title').textContent = 'Tambah Menu ke ' + catName;
   document.getElementById('add-menu-name').value = '';
   document.getElementById('add-menu-desc').value = '';
+  document.getElementById('add-menu-image').value = '';
+  const preview = document.getElementById('add-menu-image-preview');
+  if (preview) {
+    preview.classList.add('empty');
+    preview.innerHTML = 'Pilih gambar untuk disisipkan setelah menu dibuat.';
+  }
   openModal('modal-add-menu');
 }
 
-function confirmAddMenu() {
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function handleAddMenuImageChange(event) {
+  const file = event.target.files[0];
+  const preview = document.getElementById('add-menu-image-preview');
+  if (!preview) return;
+  if (!file) {
+    preview.classList.add('empty');
+    preview.innerHTML = 'Pilih gambar untuk disisipkan setelah menu dibuat.';
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  preview.classList.remove('empty');
+  preview.innerHTML = `<img src="${url}" alt="Preview gambar menu">`;
+}
+
+async function confirmAddMenu() {
   const catKey   = document.getElementById('add-menu-catkey').value;
   const catName  = document.getElementById('add-menu-catname').value;
   const color    = document.getElementById('add-menu-color').value;
   const menuName = document.getElementById('add-menu-name').value.trim();
   const menuDesc = document.getElementById('add-menu-desc').value.trim();
+  const menuImageFile = document.getElementById('add-menu-image').files[0];
   if (!menuName) { closeModal('modal-add-menu'); return; }
+
+  let menuImage = '';
+  if (menuImageFile) {
+    try {
+      menuImage = await readFileAsDataURL(menuImageFile);
+    } catch (err) {
+      console.warn('Gagal membaca file gambar:', err);
+    }
+  }
 
   const menuId = catKey + '_menu_' + Date.now();
   const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
@@ -3948,6 +4056,9 @@ function confirmAddMenu() {
       </div>
       <h1>${menuName}</h1><p>${menuDesc || 'Panduan ' + menuName + ' di ' + catName + ' Microsoft Dynamics 365 Business Central.'}</p>
     </div>
+    ${menuImage ? `
+    <div class="menu-image-preview"><img src="${menuImage}" alt="Gambar ${menuName}"></div>
+    ` : ''}
     <div class="process-block">
       <div class="process-title">Alur Proses <span class="tag ${tagClass}">${catName} › ${menuName}</span></div>
       <div class="flow-wrap">
@@ -3981,7 +4092,7 @@ function confirmAddMenu() {
 
   // Save
   const saved = getSaved();
-  saved['__menu_' + menuId] = { catKey, catName, color, menuName, menuDesc, menuId };
+  saved['__menu_' + menuId] = { catKey, catName, color, menuName, menuDesc, menuId, menuImage };
   saveToDB(saved);
   closeModal('modal-add-menu');
   go(menuId);
@@ -3991,7 +4102,7 @@ function confirmAddMenu() {
 function restoreCustomMenus(saved) {
   for (const key in saved) {
     if (!key.startsWith('__menu_')) continue;
-    const { catKey, catName, color, menuName, menuDesc, menuId } = saved[key];
+    const { catKey, catName, color, menuName, menuDesc, menuId, menuImage } = saved[key];
     if (document.getElementById('sec-' + menuId)) continue; // already exists
 
     const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
@@ -4024,6 +4135,7 @@ function restoreCustomMenus(saved) {
         </div>
         <h1>${menuName}</h1><p>${menuDesc || ''}</p>
       </div>
+      ${menuImage ? `<div class="menu-image-preview"><img src="${menuImage}" alt="Gambar ${menuName}"></div>` : ''}
       <div class="process-block">
         <div class="process-title">Alur Proses <span class="tag ${tagClass}">${catName} › ${menuName}</span></div>
         <div class="flow-wrap">
@@ -4082,11 +4194,85 @@ function updateSupabaseStatus(connected) {
   if (!dot || !text) return;
   if (connected) {
     dot.className = 'supabase-dot connected';
-    text.textContent = 'Tersimpan di Supabase';
+    text.textContent = '✓ Supabase terkoneksi';
   } else {
     dot.className = 'supabase-dot local';
-    text.textContent = 'Mode Lokal (localStorage)';
+    text.textContent = '⚠ Mode Lokal (localStorage)';
   }
+}
+
+// ===== TEST SUPABASE STORAGE CONNECTION =====
+async function testSupabaseStorageConnection() {
+  try {
+    if (!window._SUPABASE_URL || !window._SUPABASE_ANON_KEY) {
+      console.warn('Supabase credentials not found');
+      return false;
+    }
+    
+    // Test if we can access the storage bucket
+    const testUrl = getSupabaseImageUrl('screenshots/img-cd1.jpg');
+    if (!testUrl) {
+      console.warn('Failed to generate storage URL');
+      return false;
+    }
+    
+    console.log('Storage URL generated:', testUrl);
+    
+    // Try to fetch the first image to verify connectivity
+    const response = await fetch(testUrl, { method: 'HEAD' });
+    if (response.ok) {
+      console.log('✓ Supabase Storage connection successful');
+      return true;
+    } else {
+      console.warn('Storage bucket not accessible (HTTP ' + response.status + ')');
+      
+      // Provide diagnostics
+      console.info('--- Diagnostics ---');
+      console.info('Supabase URL:', window._SUPABASE_URL);
+      console.info('Generated URL:', testUrl);
+      console.info('Response status:', response.status, response.statusText);
+      
+      return false;
+    }
+  } catch(e) {
+    console.warn('Supabase Storage connection test failed:', e.message);
+    console.info('Possible causes:');
+    console.info('1. Bucket "step-images" might not be public');
+    console.info('2. Images might not exist in the bucket');
+    console.info('3. CORS might be blocking the request');
+    console.info('4. Supabase project might be inactive');
+    return false;
+  }
+}
+
+// ===== DIAGNOSE IMAGE LOADING ISSUES =====
+async function diagnoseImageIssues() {
+  console.log('🔍 Starting image diagnostics...');
+  
+  const images = document.querySelectorAll('[id^="img-"]');
+  console.log(`Found ${images.length} images to check`);
+  
+  let working = 0;
+  let broken = 0;
+  let checking = 0;
+  
+  for (const img of images) {
+    checking++;
+    try {
+      const response = await fetch(img.src, { method: 'HEAD', mode: 'no-cors' });
+      console.log(`[${checking}/${images.length}] ${img.id}:`, 
+        response.ok ? '✓ OK' : `✗ HTTP ${response.status}`, 
+        img.src.substring(0, 60) + '...');
+      if (response.ok) working++;
+      else broken++;
+    } catch(e) {
+      console.log(`[${checking}/${images.length}] ${img.id}: ✗ Error -`, e.message.substring(0, 40));
+      broken++;
+    }
+  }
+  
+  console.log(`\n📊 Summary: ${working} working, ${broken} broken`);
+  return { total: images.length, working, broken };
 }
 
 function openAddCatModal() {
@@ -4312,8 +4498,8 @@ function applyToPage(sid, label, desc, imgSrc) {
 const SUPABASE_URL = window._SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = window._SUPABASE_ANON_KEY || '';
 const APP_ID = 'd365-dmk-v3';
-let _dbCache = null;
-let _dbSaveTimer = null;
+/*let _dbCache = null;
+let _dbSaveTimer = null;*/
 
 async function getSavedAsync() {
   if (_dbCache !== null) return JSON.parse(JSON.stringify(_dbCache));
@@ -4451,9 +4637,52 @@ function restoreCustomCategories() {
 // INIT
 // ═══════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
-  // Store original img srcs
+  // Fix all Supabase image URLs
   document.querySelectorAll('[id^="img-"]').forEach(img => {
     img.setAttribute('data-orig-src', img.src);
+    
+    // Add error handler
+    img.addEventListener('error', function() {
+      handleImageError(this);
+    });
+    
+    // Extract the filename from the current URL
+    let filename = img.src.split('/').pop();
+    if (img.src.includes('supabase.co') && filename) {
+      // Generate correct public URL
+      const publicUrl = getSupabaseImageUrl('screenshots/' + filename);
+      if (publicUrl) {
+        img.src = publicUrl;
+        console.log('Updated image URL:', filename, '→', publicUrl);
+      }
+    }
+  });
+
+  // Also handle editor preview images
+  document.querySelectorAll('[id^="eprev-"]').forEach(img => {
+    img.addEventListener('error', function() {
+      handleImageError(this);
+    });
+  });
+
+  // Test storage and provide user feedback
+  console.log('ℹ️ Checking image connectivity...');
+  testSupabaseStorageConnection().then(async (isConnected) => {
+    if (!isConnected) {
+      // Run diagnostics to help identify the issue
+      console.warn('⚠️ Image loading may have issues. Running diagnostics...');
+      console.warn('To check image status, run: diagnoseImageIssues() in console');
+      const result = await diagnoseImageIssues();
+      if (result.broken === result.total) {
+        console.error('❌ All images failed to load! This means:');
+        console.error('1. Supabase bucket "step-images" might not be public');
+        console.error('2. Check: Supabase Project → Storage → step-images → Policies');
+        console.error('3. Ensure bucket allows public read access');
+        console.error('4. Images should exist at path: step-images/screenshots/img-*.jpg');
+      }
+    } else {
+      console.log('✓ Images should load correctly');
+    }
   });
 
   // Build step-actions for every existing step-row
@@ -4484,6 +4713,15 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Update status: loading
   updateSupabaseStatus(false);
+
+  // Test Supabase Storage connection
+  if (window._SUPABASE_URL && window._SUPABASE_ANON_KEY) {
+    testSupabaseStorageConnection().then(isConnected => {
+      if (!isConnected) {
+        console.warn('Supabase Storage may not be accessible. Falling back to localStorage.');
+      }
+    });
+  }
 
   // Load data (async - Supabase or localStorage fallback)
   let saved = {};
@@ -4651,6 +4889,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     <div class="modal-field">
       <label>Deskripsi Singkat (opsional)</label>
       <textarea class="modal-input" id="add-menu-desc" rows="2" placeholder="Deskripsi panduan ini..."></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Upload Gambar (opsional)</label>
+      <input class="modal-image-input" id="add-menu-image" type="file" accept="image/*" onchange="handleAddMenuImageChange(event)">
+      <div class="modal-image-preview empty" id="add-menu-image-preview">Pilih gambar untuk disisipkan setelah menu dibuat.</div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal('modal-add-menu')">Batal</button>
