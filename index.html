@@ -444,41 +444,114 @@ function getSupabaseImageUrl(imagePath) {
 function handleImageError(img) {
   console.warn('Gambar gagal dimuat:', img.src);
   
-  // Try alternative paths if image is from Supabase
-  if (img.src && img.src.includes('supabase')) {
-    const filename = img.src.split('/').pop();
-    if (filename && !img.hasAttribute('data-retry')) {
-      img.setAttribute('data-retry', 'true');
-      
-      // Try different possible paths
-      const alternativePaths = [
-        `screenshots/${filename}`,
-        `public/${filename}`,
-        `${filename}`
-      ];
-      
-      for (const path of alternativePaths) {
-        const altUrl = getSupabaseImageUrl(path);
-        if (altUrl && altUrl !== img.src) {
-          console.log('Trying alternative path:', altUrl);
-          img.src = altUrl;
-          img.onerror = null; // Remove error handler temporarily to avoid infinite loop
-          img.onerror = function() { handleImageError(this); };
-          return;
-        }
-      }
+  if (!img.src || !img.src.includes('supabase')) return;
+  
+  // Track retry count to prevent infinite loops
+  let retryCount = parseInt(img.getAttribute('data-retry-count') || '0');
+  if (retryCount >= 3) {
+    console.error('Max retries reached for:', img.src);
+    // Add visual indicator for permanently failed image
+    img.style.opacity = '0.4';
+    img.style.border = '2px solid #cc4444';
+    img.alt = '❌ Gambar tidak dapat ditampilkan';
+    img.title = 'URL: ' + img.src;
+    return;
+  }
+  
+  retryCount++;
+  img.setAttribute('data-retry-count', retryCount.toString());
+  
+  // Extract filename from current URL
+  const filename = img.src.split('/').pop();
+  if (!filename) return;
+  
+  // Construct fresh URL directly from Supabase config
+  const baseUrl = window._SUPABASE_URL;
+  const bucket = 'step-images';
+  
+  // Try different path patterns
+  const paths = [
+    `${filename}`,                           // Direct filename
+    `screenshots/${filename}`,                // With screenshots folder
+    `step-images/${filename}`,                // Alt path 1
+    `screenshots/img-${filename}`,            // Renamed variant
+  ];
+  
+  // Try each alternative
+  for (const path of paths) {
+    const newUrl = `${baseUrl}/storage/v1/object/public/${bucket}/${path}`;
+    if (newUrl !== img.src) {
+      console.log(`[Retry ${retryCount}] Trying: ${newUrl}`);
+      // Set new src and wait for load
+      img.onerror = null; // Clear previous handler
+      img.onload = function() { 
+        console.log('Image loaded successfully:', this.src);
+        img.style.opacity = '1';
+        img.style.border = 'none';
+        img.onload = null;
+      };
+      img.onerror = function() { handleImageError(this); };
+      img.src = newUrl;
+      return;
     }
   }
   
-  // Add visual indicator for failed image
-  img.style.opacity = '0.5';
-  img.style.border = '2px solid var(--red-bd)';
+  // If all retries failed, show placeholder
+  img.style.opacity = '0.3';
+  img.style.border = '2px solid #ff4444';
   img.alt = '❌ Gambar tidak dapat ditampilkan';
   img.title = 'URL: ' + img.src;
 }
 
+// ===== SUPABASE DIAGNOSTIC =====
+async function diagnoseSupabase() {
+  console.log('=== SUPABASE DIAGNOSTIC ===');
+  console.log('URL:', window._SUPABASE_URL);
+  console.log('Has Anon Key:', !!window._SUPABASE_ANON_KEY);
+  console.log('Client initialized:', !!supabaseClient);
+  
+  // Check if Supabase URL is valid
+  if (!window._SUPABASE_URL || !window._SUPABASE_URL.includes('supabase.co')) {
+    console.error('⚠️ INVALID SUPABASE URL:', window._SUPABASE_URL);
+    console.error('❌ Supabase URL must be in format: https://xxxxx.supabase.co');
+    return;
+  }
+  
+  // Test a simple image fetch
+  const testUrl = `${window._SUPABASE_URL}/storage/v1/object/public/step-images/screenshots/img-cd1.jpg`;
+  try {
+    const res = await fetch(testUrl, { method: 'HEAD' });
+    console.log(`✓ Test image (${res.status}):`, testUrl);
+  } catch (e) {
+    if (e.message.includes('Failed to fetch') || e.message.includes('ERR_NAME_NOT_RESOLVED')) {
+      console.error('❌ CANNOT REACH SUPABASE SERVER');
+      console.error('Possible causes:');
+      console.error('  1. Domain "' + new URL(window._SUPABASE_URL).hostname + '" does not exist');
+      console.error('  2. Supabase project may have been deleted');
+      console.error('  3. Check your Supabase project URL in Supabase dashboard');
+      console.error('  4. URL format: https://[project-id].supabase.co');
+    } else {
+      console.error('Test image fetch failed:', e.message);
+    }
+  }
+  
+  // Test Supabase client storage list
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient.storage.from('step-images').list('screenshots', { limit: 5 });
+      if (error) {
+        console.error('Storage list error:', error.message);
+      } else {
+        console.log('✓ Storage contents sample:', data?.slice(0, 3));
+      }
+    } catch (e) {
+      console.error('Storage list exception:', e.message);
+    }
+  }
+}
+
 // ===== NEW DB SYSTEM (APP_DATA JSON) =====
-let _dbCache = { menus: [], categories: [] };
+let _appDataCache = { menus: [], categories: [] };
 let _dbReady = false;
 
 async function ensureAppData(){
@@ -497,7 +570,7 @@ async function ensureAppData(){
 }
 
 async function loadDB(){
-  if(_dbReady) return _dbCache;
+  if(_dbReady) return _appDataCache;
 
   await ensureAppData();
 
@@ -511,12 +584,12 @@ async function loadDB(){
     console.error('Load gagal', error);
   }else{
   const loadedData = data.data || { menus: [], categories: [] };
-  _dbCache.menus = loadedData.menus;
-  _dbCache.categories = loadedData.categories;
+  _appDataCache.menus = loadedData.menus;
+  _appDataCache.categories = loadedData.categories;
   }
 
   _dbReady = true;
-  return _dbCache;
+  return _appDataCache;
 }
 
 async function saveAppData(){
@@ -524,7 +597,7 @@ async function saveAppData(){
     .from('app_data')
     .upsert({
       app_id: 'main',
-      data: _dbCache,
+      data: _appDataCache,
       updated_at: new Date()
     });
 
@@ -538,33 +611,120 @@ async function saveAppData(){
 
 // ===== OVERRIDE SAVE FUNCTIONS =====
 async function handleAddMenu(menu){
-  _dbCache.menus.push(menu);
+  _appDataCache.menus.push(menu);
   const ok = await saveAppData();
   if(!ok) return;
   addMenuToCategory(menu.category, menu);
-  initEditorSelect();
+  if (typeof initEditorSelect === 'function') {
+    try { initEditorSelect(); } catch(e) { console.warn('initEditorSelect error:', e); }
+  }
 }
 
 async function handleAddCategory(cat){
-  _dbCache.categories.push(cat);
+  _appDataCache.categories.push(cat);
   const ok = await saveAppData();
   if(!ok) return;
   ensureNavSection(cat.key, cat.name);
 }
 
 async function updateMenu(menu){
-  const i = _dbCache.menus.findIndex(m=>m.id===menu.id);
+  const i = _appDataCache.menus.findIndex(m=>m.id===menu.id);
   if(i !== -1){
-    _dbCache.menus[i] = menu;
+    _appDataCache.menus[i] = menu;
     await saveAppData();
+  }
+}
+
+// ===== ATTACH IMAGE ERROR HANDLERS =====
+function attachImageErrorHandlers() {
+  document.querySelectorAll('img[src*="supabase.co"]').forEach(img => {
+    img.onerror = function() { handleImageError(this); };
+    // Force reload if image failed to load during initial page load
+    if (img.complete && img.naturalHeight === 0) {
+      handleImageError(img);
+    }
+  });
+  
+  // Also handle images that load after initial page load (dynamic)
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeType === 1) { // Element node
+            const imgs = node.querySelectorAll ? node.querySelectorAll('img[src*="supabase.co"]') : [];
+            imgs.forEach(img => {
+              if (!img.onerror) {
+                img.onerror = function() { handleImageError(this); };
+              }
+            });
+            if (node.tagName === 'IMG' && node.src.includes('supabase.co')) {
+              if (!node.onerror) {
+                node.onerror = function() { handleImageError(this); };
+              }
+            }
+          }
+        });
+      }
+    });
+  });
+  
+  observer.observe(document.body, { childList: true, subtree: true });
+  
+  // Handle lazy-loaded images with Intersection Observer
+  if ('IntersectionObserver' in window) {
+    const imageObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          // Trigger manual load if lazy-loading hasn't happened
+          if (img.src && !img.complete) {
+            // Image is in viewport but not loaded yet
+            img.onload = function() {
+              console.log('Lazy-loaded image:', this.src);
+            };
+            img.onerror = function() { handleImageError(this); };
+          }
+          // Unobserve after image is in viewport
+          imageObserver.unobserve(img);
+        }
+      });
+    }, { rootMargin: '50px' });
+    
+    document.querySelectorAll('img[loading="lazy"][src*="supabase.co"]').forEach(img => {
+      imageObserver.observe(img);
+    });
   }
 }
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', async () => {
+  console.log('🚀 Page loaded, initializing...');
+  
   await loadDB();
   restoreCustomMenus();
-  initEditorSelect();
+  try {
+    if (typeof initEditorSelect === 'function') {
+      initEditorSelect();
+    }
+  } catch(e) {
+    console.warn('⚠️ Error calling initEditorSelect:', e.message);
+  }
+  
+  // Run diagnostics for Supabase
+  diagnoseSupabase();
+  
+  // Attach image error handlers after DOM is fully loaded
+  setTimeout(() => {
+    attachImageErrorHandlers();
+    console.log('✓ Image error handlers attached');
+  }, 100);
+  
+  // Re-attach handlers after a delay for any dynamically added content
+  setTimeout(() => {
+    attachImageErrorHandlers();
+    const imageCount = document.querySelectorAll('img[src*="supabase.co"]').length;
+    console.log(`✓ Re-attached handlers for ${imageCount} images`);
+  }, 2000);
 });
 </script>
 
@@ -3652,7 +3812,13 @@ function go(secId) {
   if (nav) nav.classList.add('active');
   // Sync editor module select if going to editor
   if (secId === 'editor') {
-    syncEditorModule();
+    try {
+      if (typeof syncEditorModule === 'function') {
+        syncEditorModule();
+      }
+    } catch(e) {
+      console.warn('⚠️ Error calling syncEditorModule:', e.message);
+    }
   }
 }
 
@@ -3913,6 +4079,7 @@ function deleteStep(sid) {
   const saved = getSaved();
   delete saved[sid];
   saveToDB(saved);
+  if (typeof initEditorSelect === 'function') initEditorSelect();
   showToast('🗑️ Langkah dihapus');
 }
 
@@ -3959,6 +4126,7 @@ function confirmAddStep() {
   const saved = getSaved();
   saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
   saveToDB(saved);
+  if (typeof initEditorSelect === 'function') initEditorSelect();
   closeModal('modal-add-step');
   showToast('✓ Langkah baru ditambahkan');
 }
@@ -4094,6 +4262,7 @@ async function confirmAddMenu() {
   const saved = getSaved();
   saved['__menu_' + menuId] = { catKey, catName, color, menuName, menuDesc, menuId, menuImage };
   saveToDB(saved);
+  initEditorSelect();
   closeModal('modal-add-menu');
   go(menuId);
   showToast('✓ Menu "' + menuName + '" berhasil ditambahkan ke ' + catName + '!');
@@ -4369,13 +4538,143 @@ function syncEditorModule() {
   switchEditorModule(sel.value);
 }
 
+function getEditorOptionLabel(secId) {
+  const nav = document.getElementById('nav-' + secId);
+  if (nav) return nav.textContent.trim();
+  const pageTitle = document.querySelector('#sec-' + secId + ' .page-header h1');
+  if (pageTitle) return pageTitle.textContent.trim();
+  return secId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getCustomSectionIds(saved = getSaved()) {
+  return Object.keys(saved)
+    .filter(k => k.startsWith('__menu_'))
+    .map(k => saved[k].menuId);
+}
+
+function getCustomStepIdsForSection(secId, saved = getSaved()) {
+  return Object.keys(saved).filter(key => {
+    const item = saved[key];
+    return !key.startsWith('__') && item && item.isCustom && item.secId === secId;
+  });
+}
+
+function getStepIdsForSection(secId) {
+  if (STEP_MAP[secId]) return STEP_MAP[secId].slice();
+  return getCustomStepIdsForSection(secId);
+}
+
+function buildEditorStepHtml(sid) {
+  const saved = getSaved();
+  const pageLabel = document.getElementById('lbl-' + sid);
+  const pageDesc = document.getElementById('dsc-' + sid);
+  const pageImg = document.getElementById('img-' + sid);
+  const stepData = saved[sid] || {};
+  const label = stepData.label || (pageLabel ? pageLabel.textContent : '');
+  const desc = stepData.desc || (pageDesc ? pageDesc.innerHTML : '');
+  const imgSrc = stepData.img || (pageImg ? pageImg.src : '');
+  const emptyClass = imgSrc ? '' : ' empty';
+  const imgHtml = imgSrc ? `<img class="editor-img-preview" id="eprev-${sid}" src="${escapeHtml(imgSrc)}" alt="preview"/>` : `<img class="editor-img-preview empty" id="eprev-${sid}" src="" alt="preview"/>`;
+
+  return `
+    <div class="editor-step">
+      <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">${label || 'Langkah baru'}</span></div>
+      <div class="editor-step-body">
+        <div class="editor-field">
+          <label>Judul Langkah</label>
+          <input class="editor-input" id="einput-lbl-${sid}" value="${escapeHtml(label)}" placeholder="Judul langkah..."/>
+        </div>
+        <div class="editor-field">
+          <label>Deskripsi / Keterangan</label>
+          <textarea class="editor-input" id="einput-dsc-${sid}">${escapeHtml(desc)}</textarea>
+        </div>
+        <div class="editor-field">
+          <label>Foto Screenshot</label>
+          <div class="editor-img-row">
+            ${imgHtml}
+            <div class="editor-img-actions">
+              <label class="upload-btn">📂 Pilih Foto Baru<input type="file" accept="image/*" onchange="handleImgUpload(this,'${sid}')"/></label>
+              <div class="upload-hint">Format: JPG, PNG, WebP<br>Foto akan menggantikan screenshot saat ini</div>
+              <button onclick="resetImg('${sid}')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function createEditorModulePanel(secId) {
+  const existing = document.getElementById('em-' + secId);
+  const isBuiltIn = Object.prototype.hasOwnProperty.call(STEP_MAP, secId);
+  if (existing && isBuiltIn) return;
+
+  const stepIds = getStepIdsForSection(secId);
+  const module = existing || document.createElement('div');
+  module.className = 'editor-module';
+  module.id = 'em-' + secId;
+  module.style.display = 'none';
+  if (!stepIds.length) {
+    module.innerHTML = `
+      <div class="editor-step">
+        <div class="editor-step-head">Modul ${getEditorOptionLabel(secId)}</div>
+        <div class="editor-step-body">
+          <div class="editor-field">
+            <label>Info</label>
+            <p>Tidak ada langkah panduan yang dipetakan untuk modul ini.</p>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    module.innerHTML = stepIds.map(sid => buildEditorStepHtml(sid)).join('');
+  }
+  const editorBody = document.querySelector('.editor-body');
+  if (editorBody && !existing) editorBody.appendChild(module);
+}
+
+function initEditorSelect() {
+  const sel = document.getElementById('editor-module-sel');
+  if (!sel) return;
+
+  const currentValue = sel.value;
+  const saved = getSaved();
+  const customIds = getCustomSectionIds(saved);
+  const allIds = [...Object.keys(STEP_MAP), ...customIds.filter(id => !Object.prototype.hasOwnProperty.call(STEP_MAP, id))];
+
+  sel.innerHTML = '';
+  allIds.forEach(secId => {
+    const option = document.createElement('option');
+    option.value = secId;
+    option.textContent = getEditorOptionLabel(secId);
+    sel.appendChild(option);
+    createEditorModulePanel(secId);
+  });
+
+  if (currentValue && Array.from(sel.options).some(opt => opt.value === currentValue)) {
+    sel.value = currentValue;
+  } else if (sel.options.length) {
+    sel.value = sel.options[0].value;
+  }
+
+  if (document.getElementById('sec-editor')?.classList.contains('active')) {
+    switchEditorModule(sel.value);
+  }
+}
+
 function switchEditorModule(secId) {
   document.querySelectorAll('.editor-module').forEach(m => m.style.display = 'none');
   const m = document.getElementById('em-' + secId);
   if (m) {
     m.style.display = 'block';
-    // Refresh image previews
-    const steps = STEP_MAP[secId] || [];
+    const steps = getStepIdsForSection(secId);
     steps.forEach(sid => {
       const pageImg = document.getElementById('img-' + sid);
       const prevEl  = document.getElementById('eprev-' + sid);
@@ -4412,15 +4711,18 @@ function resetImg(sid) {
 
 function saveEdits() {
   const saved = getSaved();
-  for (const [sec, steps] of Object.entries(STEP_MAP)) {
-    for (const sid of steps) {
-      const lbl = document.getElementById('einput-lbl-' + sid);
-      const dsc = document.getElementById('einput-dsc-' + sid);
-      if (!saved[sid]) saved[sid] = {};
-      if (lbl) saved[sid].label = lbl.value;
-      if (dsc) saved[sid].desc  = dsc.value;
-      if (_pendingImgs[sid]) saved[sid].img = _pendingImgs[sid];
-    }
+  document.querySelectorAll('[id^="einput-lbl-"], [id^="einput-dsc-"]').forEach(input => {
+    const match = input.id.match(/^einput-(lbl|dsc)-(.+)$/);
+    if (!match) return;
+    const sid = match[2];
+    if (!saved[sid]) saved[sid] = {};
+    if (match[1] === 'lbl') saved[sid].label = input.value;
+    else saved[sid].desc = input.value;
+  });
+  for (const sid in _pendingImgs) {
+    if (!_pendingImgs.hasOwnProperty(sid)) continue;
+    if (!saved[sid]) saved[sid] = {};
+    saved[sid].img = _pendingImgs[sid];
   }
   saveToDB(saved);
   applyAllSaved(saved);
@@ -4463,16 +4765,18 @@ function initEditor() {
 
 function saveAll() {
   const saved = getSaved();
-  // Sync editor inputs
-  for (const [sec, steps] of Object.entries(STEP_MAP)) {
-    for (const sid of steps) {
-      const lbl = document.getElementById('lbl-' + sid);
-      const dsc = document.getElementById('dsc-' + sid);
-      if (!saved[sid]) saved[sid] = {};
-      if (lbl) saved[sid].label = lbl.textContent;
-      if (dsc) saved[sid].desc  = dsc.innerHTML;
-      if (_pendingImgs[sid]) saved[sid].img = _pendingImgs[sid];
-    }
+  document.querySelectorAll('[id^="einput-lbl-"], [id^="einput-dsc-"]').forEach(input => {
+    const match = input.id.match(/^einput-(lbl|dsc)-(.+)$/);
+    if (!match) return;
+    const sid = match[2];
+    if (!saved[sid]) saved[sid] = {};
+    if (match[1] === 'lbl') saved[sid].label = input.value;
+    else saved[sid].desc = input.value;
+  });
+  for (const sid in _pendingImgs) {
+    if (!_pendingImgs.hasOwnProperty(sid)) continue;
+    if (!saved[sid]) saved[sid] = {};
+    saved[sid].img = _pendingImgs[sid];
   }
   saveToDB(saved);
 }
@@ -4481,7 +4785,6 @@ function applyAllSaved(saved) {
   for (const sid in saved) {
     if (sid.startsWith('__')) continue;
     const d = saved[sid];
-    if (d.isCustom) continue; // custom steps handled separately
     applyToPage(sid, d.label||null, d.desc||null, d.img||null);
   }
 }
@@ -4498,11 +4801,11 @@ function applyToPage(sid, label, desc, imgSrc) {
 const SUPABASE_URL = window._SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = window._SUPABASE_ANON_KEY || '';
 const APP_ID = 'd365-dmk-v3';
-/*let _dbCache = null;
-let _dbSaveTimer = null;*/
+let _savedCache = null;
+let _dbSaveTimer = null;
 
 async function getSavedAsync() {
-  if (_dbCache !== null) return JSON.parse(JSON.stringify(_dbCache));
+  if (_savedCache !== null) return JSON.parse(JSON.stringify(_savedCache));
   // Try Supabase first
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
@@ -4512,24 +4815,24 @@ async function getSavedAsync() {
       );
       if (res.ok) {
         const rows = await res.json();
-        _dbCache = rows[0]?.data || {};
-        return JSON.parse(JSON.stringify(_dbCache));
+        _savedCache = rows[0]?.data || {};
+        return JSON.parse(JSON.stringify(_savedCache));
       }
     } catch(e) { console.warn('Supabase fetch failed, using localStorage', e); }
   }
   // Fallback to localStorage
-  try { _dbCache = JSON.parse(localStorage.getItem('d365_edits') || '{}'); } catch { _dbCache = {}; }
-  return JSON.parse(JSON.stringify(_dbCache));
+  try { _savedCache = JSON.parse(localStorage.getItem('d365_edits') || '{}'); } catch { _savedCache = {}; }
+  return JSON.parse(JSON.stringify(_savedCache));
 }
 
 function getSaved() {
-  if (_dbCache !== null) return JSON.parse(JSON.stringify(_dbCache));
-  try { _dbCache = JSON.parse(localStorage.getItem('d365_edits') || '{}'); } catch { _dbCache = {}; }
-  return JSON.parse(JSON.stringify(_dbCache));
+  if (_savedCache !== null) return JSON.parse(JSON.stringify(_savedCache));
+  try { _savedCache = JSON.parse(localStorage.getItem('d365_edits') || '{}'); } catch { _savedCache = {}; }
+  return JSON.parse(JSON.stringify(_savedCache));
 }
 
 function saveToDB(data) {
-  _dbCache = JSON.parse(JSON.stringify(data));
+  _savedCache = JSON.parse(JSON.stringify(data));
   // Always save to localStorage as backup
   try { localStorage.setItem('d365_edits', JSON.stringify(data)); } catch(e) {}
   // Debounced Supabase save
@@ -4557,7 +4860,8 @@ function saveToDB(data) {
 
 function resetAll() {
   if (!confirm('Reset semua perubahan ke konten asli?\n\nSemua data di Supabase dan localStorage akan dihapus.')) return;
-  _dbCache = {};
+  _savedCache = null;
+  _appDataCache = { menus: [], categories: [] };
   localStorage.removeItem('d365_edits');
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     fetch(`${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`, {
@@ -4734,7 +5038,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (res.ok) {
         const rows = await res.json();
         saved = rows[0]?.data || {};
-        _dbCache = saved;
+        _savedCache = saved;
         updateSupabaseStatus(true);
         // Sync to localStorage as backup
         try { localStorage.setItem('d365_edits', JSON.stringify(saved)); } catch(e) {}
