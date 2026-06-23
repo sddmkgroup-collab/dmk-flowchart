@@ -3958,6 +3958,85 @@ function saveFlowEdits(btn) {
   _editingFlowWrap = null;
 }
 
+function layoutFlowNode(g) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const rect = g.querySelector('rect');
+  const svg = g.closest('svg');
+  if (!rect || !svg) return;
+
+  const line1 = (g.querySelector('text:nth-of-type(1)')?.textContent || '').trim();
+  let line2 = (g.querySelector('text:nth-of-type(2)')?.textContent || '').trim();
+  if (!line1) return;
+
+  const temp = document.createElementNS(ns, 'g');
+  temp.setAttribute('visibility', 'hidden');
+  temp.setAttribute('pointer-events', 'none');
+  const t1 = document.createElementNS(ns, 'text');
+  t1.setAttribute('font-size', '12');
+  t1.setAttribute('font-weight', '600');
+  t1.textContent = line1;
+  temp.appendChild(t1);
+  let t2;
+  if (line2) {
+    t2 = document.createElementNS(ns, 'text');
+    t2.setAttribute('font-size', '11');
+    t2.textContent = line2;
+    temp.appendChild(t2);
+  }
+  svg.appendChild(temp);
+
+  const width1 = t1.getBBox().width;
+  const width2 = t2 ? t2.getBBox().width : 0;
+  temp.remove();
+
+  const width = Math.max(80, Math.ceil(Math.max(width1, width2) + 40));
+  const height = line2 ? 64 : 40;
+
+  rect.setAttribute('width', width);
+  rect.setAttribute('height', height);
+
+  const x = parseFloat(rect.getAttribute('x') || '0');
+  const y = parseFloat(rect.getAttribute('y') || '0');
+  const centerX = x + width / 2;
+  const line1Y = line2 ? y + height * 0.42 : y + height * 0.5;
+
+  let text1 = g.querySelector('text:nth-of-type(1)');
+  if (!text1) {
+    text1 = document.createElementNS(ns, 'text');
+    g.appendChild(text1);
+  }
+  text1.setAttribute('x', centerX);
+  text1.setAttribute('y', line1Y);
+  text1.setAttribute('text-anchor', 'middle');
+  text1.setAttribute('dominant-baseline', 'central');
+  text1.setAttribute('font-size', '12');
+  text1.setAttribute('font-weight', '600');
+  text1.textContent = line1;
+
+  const text2 = g.querySelector('text:nth-of-type(2)');
+  if (line2) {
+    let second = text2;
+    if (!second) {
+      second = document.createElementNS(ns, 'text');
+      g.appendChild(second);
+    }
+    second.setAttribute('x', centerX);
+    second.setAttribute('y', y + height * 0.72);
+    second.setAttribute('text-anchor', 'middle');
+    second.setAttribute('dominant-baseline', 'central');
+    second.setAttribute('font-size', '11');
+    second.textContent = line2;
+  } else if (text2) {
+    text2.remove();
+  }
+
+  const vb = svg.getAttribute('viewBox').split(' ').map(n => parseFloat(n));
+  const requiredWidth = x + width + 20;
+  if (requiredWidth > vb[2]) {
+    svg.setAttribute('viewBox', `0 0 ${requiredWidth} ${vb[3]}`);
+  }
+}
+
 function confirmNodeEdit() {
   const mode = document.getElementById('editing-node-g').value;
   const line1 = document.getElementById('node-line1').value.trim();
@@ -3966,42 +4045,54 @@ function confirmNodeEdit() {
   const svg = window._editingNodeSvg;
   if (!svg || !line1) { closeModal('modal-add-node'); return; }
 
+  const ns = 'http://www.w3.org/2000/svg';
   if (mode === '__edit__' && _selectedNode) {
     _selectedNode.className.baseVal = color;
-    const texts = _selectedNode.querySelectorAll('text');
-    if (texts[0]) texts[0].textContent = line1;
-    if (texts[1]) texts[1].textContent = line2;
+    let text1 = _selectedNode.querySelector('text:nth-of-type(1)');
+    if (!text1) {
+      text1 = document.createElementNS(ns, 'text');
+      _selectedNode.appendChild(text1);
+    }
+    text1.textContent = line1;
+
+    let text2 = _selectedNode.querySelector('text:nth-of-type(2)');
+    if (line2) {
+      if (!text2) {
+        text2 = document.createElementNS(ns, 'text');
+        _selectedNode.appendChild(text2);
+      }
+      text2.textContent = line2;
+    } else if (text2) {
+      text2.remove();
+    }
+    layoutFlowNode(_selectedNode);
   } else if (mode === '__new__') {
     // Find viewBox to position new node
     const vb = svg.getAttribute('viewBox').split(' ');
     const W = parseFloat(vb[2]);
     const H = parseFloat(vb[3]);
     const x = 20, y = H + 20;
-    const w = 120, h = line2 ? 64 : 40;
     const ns = 'http://www.w3.org/2000/svg';
     const g = document.createElementNS(ns, 'g');
     g.setAttribute('class', color);
     const rect = document.createElementNS(ns, 'rect');
-    rect.setAttribute('x', x); rect.setAttribute('y', y);
-    rect.setAttribute('width', w); rect.setAttribute('height', h);
-    rect.setAttribute('rx', '7'); rect.setAttribute('stroke-width', '0.5');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('rx', '7');
+    rect.setAttribute('stroke-width', '0.5');
     g.appendChild(rect);
+
     const t1 = document.createElementNS(ns, 'text');
-    t1.setAttribute('x', x + w/2); t1.setAttribute('y', y + (line2 ? h*0.45 : h*0.5));
-    t1.setAttribute('text-anchor', 'middle'); t1.setAttribute('dominant-baseline', 'central');
-    t1.setAttribute('font-size', '12'); t1.setAttribute('font-weight', '600');
     t1.textContent = line1;
     g.appendChild(t1);
     if (line2) {
       const t2 = document.createElementNS(ns, 'text');
-      t2.setAttribute('x', x + w/2); t2.setAttribute('y', y + h*0.72);
-      t2.setAttribute('text-anchor', 'middle'); t2.setAttribute('dominant-baseline', 'central');
-      t2.setAttribute('font-size', '11');
       t2.textContent = line2;
       g.appendChild(t2);
     }
-    // Expand viewBox
-    svg.setAttribute('viewBox', `0 0 ${Math.max(W, x+w+20)} ${y+h+20}`);
+
+    layoutFlowNode(g);
+    svg.setAttribute('viewBox', `0 0 ${Math.max(W, x + parseFloat(rect.getAttribute('width')) + 20)} ${y + parseFloat(rect.getAttribute('height')) + 20}`);
     svg.appendChild(g);
     g.style.cursor = 'pointer';
     g.onclick = function() {
