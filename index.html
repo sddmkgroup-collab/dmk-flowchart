@@ -4214,6 +4214,10 @@ function confirmAddStep() {
           <div class="step-desc" id="dsc-${sid}">${dsc}</div>
         </div>
       </div>
+      <div class="step-img" data-step-img="${sid}">
+        <img id="img-${sid}" src="" alt="" loading="lazy" />
+        <div class="img-caption" data-cap="${sid}"></div>
+      </div>
       <div class="step-actions visible">
         <button class="step-action-btn" onclick="openStepEdit('${sid}')">✏️ Edit</button>
         <button class="step-action-btn danger" onclick="deleteStep('${sid}')">✕ Hapus</button>
@@ -4449,6 +4453,10 @@ function restoreCustomMenus(saved) {
             <div class="step-label" id="lbl-${sk}">${d.label||''}</div>
             <div class="step-desc" id="dsc-${sk}">${d.desc||''}</div>
           </div></div>
+          <div class="step-img" data-step-img="${sk}">
+            <img id="img-${sk}" src="${d.img||''}" alt="" loading="lazy" ${d.img?`data-orig-src="${d.img}"`:''} />
+            <div class="img-caption" data-cap="${sk}"></div>
+          </div>
           <div class="step-actions"><button class="step-action-btn" onclick="openStepEdit('${sk}')">✏️ Edit</button>
           <button class="step-action-btn danger" onclick="deleteStep('${sk}')">✕ Hapus</button></div>`;
         const addRow = stepsCard.querySelector('.add-step-row');
@@ -5276,6 +5284,10 @@ function restoreCustomCategories() {
               <div class="step-label" id="lbl-${sk}">${d.label||''}</div>
               <div class="step-desc" id="dsc-${sk}">${d.desc||''}</div>
             </div></div>
+            <div class="step-img" data-step-img="${sk}">
+              <img id="img-${sk}" src="${d.img||''}" alt="" loading="lazy" ${d.img?`data-orig-src="${d.img}"`:''} />
+              <div class="img-caption" data-cap="${sk}"></div>
+            </div>
             <div class="step-actions"><button class="step-action-btn" onclick="openStepEdit('${sk}')">✏️ Edit</button>
             <button class="step-action-btn danger" onclick="deleteStep('${sk}')">✕ Hapus</button></div>`;
           const addRow = stepsCard.querySelector('.add-step-row');
