@@ -3798,6 +3798,7 @@ let _editingFlowWrap = null;  // current flow-wrap being edited
 let _selectedNode = null;     // selected SVG <g> node
 let _pendingImgs = {};        // {sid: dataURL}
 let _pendingHeaderImgs = {};  // {secId: dataURL}
+let _addStepImgData = null;   // temp storage for add-step modal image (dataURL)
 let _customSteps = {};        // {secId: [{sid,lbl,dsc,img},...]}
 let _customCats = [];         // [{id,name,color,guides:[]}]
 let _customFlows = {};        // {secId: svgInnerHTML}
@@ -3827,53 +3828,75 @@ function go(secId) {
 // ═══════════════════════════════════════════════
 // TOAST
 // ═══════════════════════════════════════════════
-function showToast(msg) {
-  const t = document.getElementById('global-toast');
-  t.textContent = msg || '✓ Tersimpan';
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2800);
+function openAddStep(secId) {
+  document.getElementById('add-step-secid').value = secId;
+  document.getElementById('add-step-lbl').value = '';
+  document.getElementById('add-step-dsc').value = '';
+  const fileEl = document.getElementById('add-step-image');
+  if (fileEl) fileEl.value = null;
+  const preview = document.getElementById('add-step-image-preview');
+  if (preview) { preview.classList.add('empty'); preview.innerHTML = 'Preview akan muncul di sini setelah memilih file.'; }
+  _addStepImgData = null;
+  openModal('modal-add-step');
 }
 
-// ═══════════════════════════════════════════════
-// MODAL HELPERS
-// ═══════════════════════════════════════════════
-function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-// Close on overlay click
-document.addEventListener('click', function(e) {
-  if (e.target.classList.contains('modal-overlay')) {
-    e.target.classList.remove('open');
+async function confirmAddStep() {
+  const secId = document.getElementById('add-step-secid').value;
+  const lbl = document.getElementById('add-step-lbl').value.trim();
+  const dsc = document.getElementById('add-step-dsc').value.trim();
+  const fileEl = document.getElementById('add-step-image');
+  if (!lbl) { closeModal('modal-add-step'); return; }
+
+  const sid = secId + '_' + Date.now();
+  const num = (document.querySelectorAll('#sec-' + secId + ' .step-row').length + 1);
+
+  let imgData = null;
+  if (_addStepImgData) imgData = _addStepImgData;
+  else if (fileEl && fileEl.files && fileEl.files[0]) {
+    try { imgData = await readFileAsDataURL(fileEl.files[0]); } catch(e){ console.warn('Gagal baca gambar add-step', e); }
   }
-});
 
-// ═══════════════════════════════════════════════
-// EDIT MODE TOGGLE (global)
-// ═══════════════════════════════════════════════
-function toggleEditMode() {
-  _editMode = !_editMode;
-  // Show/hide step action buttons
-  document.querySelectorAll('.step-actions').forEach(a => {
-    a.classList.toggle('visible', _editMode);
-  });
-  // Show/hide add-step rows
-  document.querySelectorAll('.add-step-row').forEach(r => {
-    r.classList.toggle('visible', _editMode);
-  });
-  // Update flow toggle btn states
-  document.querySelectorAll('.flow-toggle-edit').forEach(btn => {
-    btn.classList.remove('active');
-  });
+  // Add to page view
+  const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
+  if (stepsCard) {
+    const newRow = document.createElement('div');
+    newRow.className = 'step-row';
+    newRow.id = 'sr-' + sid;
+    newRow.innerHTML = `
+      <div class="step-top">
+        <span class="step-num sn-blue">${num}</span>
+        <div class="step-body">
+          <div class="step-label" id="lbl-${sid}">${lbl}</div>
+          <div class="step-desc" id="dsc-${sid}">${dsc}</div>
+        </div>
+      </div>
+      <div class="step-img" data-step-img="${sid}">
+        <img id="img-${sid}" class="editor-img-preview ${imgData? '' : 'empty'}" src="${imgData||''}" alt="preview"/>
+        <div class="img-caption" data-cap="${sid}"></div>
+      </div>
+      <div class="step-actions visible">
+        <button class="step-action-btn" onclick="openStepEdit('${sid}')">✏️ Edit</button>
+        <button class="step-action-btn danger" onclick="deleteStep('${sid}')">✕ Hapus</button>
+      </div>`;
+    const addRow = stepsCard.querySelector('.add-step-row');
+    if (addRow) stepsCard.insertBefore(newRow, addRow);
+    else stepsCard.appendChild(newRow);
+  }
+
+  // Save
+  const saved = getSaved();
+  saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
+  if (imgData) saved[sid].img = imgData;
+  saveToDB(saved);
+  if (typeof initEditorSelect === 'function') initEditorSelect();
+
+  // clear temp
+  _addStepImgData = null;
+  if (fileEl) fileEl.value = null;
+
+  closeModal('modal-add-step');
+  showToast('✓ Langkah baru ditambahkan');
 }
-
-// ═══════════════════════════════════════════════
-// FLOW EDIT
-// ═══════════════════════════════════════════════
-function toggleFlowEdit(btn) {
-  const wrap = btn.closest('.flow-wrap');
   const bar = wrap.querySelector('.flow-edit-bar');
   const isActive = btn.classList.contains('active');
   // Deactivate all others
@@ -4279,6 +4302,24 @@ function handleAddMenuImageChange(event) {
   const url = URL.createObjectURL(file);
   preview.classList.remove('empty');
   preview.innerHTML = `<img src="${url}" alt="Preview gambar menu">`;
+}
+
+function handleAddStepImageChange(event) {
+  const file = event.target.files[0];
+  const preview = document.getElementById('add-step-image-preview');
+  if (!preview) return;
+  if (!file) {
+    preview.classList.add('empty');
+    preview.innerHTML = 'Preview akan muncul di sini setelah memilih file.';
+    _addStepImgData = null;
+    return;
+  }
+  // show quick preview
+  const url = URL.createObjectURL(file);
+  preview.classList.remove('empty');
+  preview.innerHTML = `<img src="${url}" alt="Preview gambar langkah">`;
+  // read full dataURL for saving
+  readFileAsDataURL(file).then(data => { _addStepImgData = data; }).catch(e => { console.warn('Gagal membaca gambar add-step', e); });
 }
 
 async function confirmAddMenu() {
@@ -5481,6 +5522,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     <div class="modal-field">
       <label>Deskripsi / Keterangan</label>
       <textarea class="modal-input" id="add-step-dsc" rows="3" placeholder="Keterangan..."></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Upload Gambar (opsional)</label>
+      <input class="modal-image-input" id="add-step-image" type="file" accept="image/*" onchange="handleAddStepImageChange(event)">
+      <div class="modal-image-preview empty" id="add-step-image-preview">Preview akan muncul di sini setelah memilih file.</div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal('modal-add-step')">Batal</button>
