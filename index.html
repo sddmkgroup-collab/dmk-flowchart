@@ -4161,16 +4161,24 @@ function saveModalStep() {
   showToast('✓ Langkah diperbarui');
 }
 
-function deleteStep(sid) {
+function confirmDeleteStep(sid) {
   if (!confirm('Hapus langkah ini?')) return;
+  deleteStep(sid);
+}
+
+function deleteStep(sid) {
   const row = document.getElementById('sr-' + sid);
   if (row) row.remove();
-  // Remove from editor
-  const edRow = document.getElementById('ed-sr-' + sid);
-  if (edRow) edRow.remove();
-  // Clean up saved
+  const editorRow = document.getElementById('ed-step-' + sid);
+  if (editorRow) editorRow.remove();
+
   const saved = getSaved();
-  delete saved[sid];
+  if (saved[sid] && saved[sid].isCustom) {
+    delete saved[sid];
+  } else {
+    if (!saved[sid]) saved[sid] = {};
+    saved[sid].deleted = true;
+  }
   saveToDB(saved);
   if (typeof initEditorSelect === 'function') initEditorSelect();
   showToast('🗑️ Langkah dihapus');
@@ -4675,20 +4683,16 @@ function getCustomStepIdsForSection(secId, saved = getSaved()) {
   });
 }
 
-function isCustomModule(secId) {
+function isModuleDeleted(secId) {
   const saved = getSaved();
-  return !!saved['__menu_' + secId];
+  return !!saved['__deleted_module_' + secId];
 }
 
 function confirmDeleteModule() {
   const sel = document.getElementById('editor-module-sel');
   if (!sel) return;
   const secId = sel.value;
-  if (!isCustomModule(secId)) {
-    alert('Hanya modul custom yang dapat dihapus.');
-    return;
-  }
-  if (!confirm('Hapus modul ini beserta semua langkah custom di dalamnya?')) return;
+  if (!confirm('Hapus modul ini beserta semua langkah yang dimodifikasi?')) return;
   deleteModule(secId);
 }
 
@@ -4698,10 +4702,11 @@ function deleteModule(secId) {
   if (saved[menuKey]) delete saved[menuKey];
   Object.keys(saved).forEach(key => {
     const item = saved[key];
-    if (!key.startsWith('__') && item && item.isCustom && item.secId === secId) {
+    if (!key.startsWith('__') && item && item.secId === secId) {
       delete saved[key];
     }
   });
+  saved['__deleted_module_' + secId] = true;
   saveToDB(saved);
 
   const sec = document.getElementById('sec-' + secId);
@@ -4718,12 +4723,25 @@ function deleteModule(secId) {
     sel.value = sel.options[0].value;
     switchEditorModule(sel.value);
   }
-  showToast('🗑️ Modul dan semua langkah custom berhasil dihapus');
+  showToast('🗑️ Modul dan semua langkah yang dimodifikasi berhasil dihapus');
+}
+
+function removeModuleFromDOM(secId) {
+  const sec = document.getElementById('sec-' + secId);
+  if (sec) sec.remove();
+  const nav = document.getElementById('nav-' + secId);
+  if (nav) nav.remove();
+  const editorModule = document.getElementById('em-' + secId);
+  if (editorModule) editorModule.remove();
+  const option = document.querySelector('#editor-module-sel option[value="' + secId + '"]');
+  if (option) option.remove();
 }
 
 function getStepIdsForSection(secId) {
-  if (STEP_MAP[secId]) return STEP_MAP[secId].slice();
-  return getCustomStepIdsForSection(secId);
+  const saved = getSaved();
+  const custom = getCustomStepIdsForSection(secId);
+  const builtIn = STEP_MAP[secId] ? STEP_MAP[secId].slice() : [];
+  return builtIn.filter(sid => !(saved[sid] && saved[sid].deleted)).concat(custom);
 }
 
 function buildEditorStepHtml(sid) {
@@ -4739,9 +4757,11 @@ function buildEditorStepHtml(sid) {
   const imgHtml = imgSrc ? `<img class="editor-img-preview" id="eprev-${sid}" src="${escapeHtml(imgSrc)}" alt="preview"/>` : `<img class="editor-img-preview empty" id="eprev-${sid}" src="" alt="preview"/>`;
 
   return `
-    <div class="editor-step">
-      <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">${label || 'Langkah baru'}</span></div>
-      <div class="editor-step-body">
+     <div class="editor-step" id="ed-step-${sid}">
+       <div class="editor-step-head">
+         Langkah: <span style="font-weight:400;color:var(--text2)">${label || 'Langkah baru'}</span>
+         <button class="step-action-btn danger" style="margin-left:auto;font-size:11px;" onclick="confirmDeleteStep('${sid}')">🗑️ Hapus Langkah</button>
+       </div>
         <div class="editor-field">
           <label>Judul Langkah</label>
           <input class="editor-input" id="einput-lbl-${sid}" value="${escapeHtml(label)}" placeholder="Judul langkah..."/>
@@ -4901,8 +4921,9 @@ function initEditorSelect() {
 
   const currentValue = sel.value;
   const saved = getSaved();
-  const customIds = getCustomSectionIds(saved);
-  const allIds = [...Object.keys(STEP_MAP), ...customIds.filter(id => !Object.prototype.hasOwnProperty.call(STEP_MAP, id))];
+  const customIds = getCustomSectionIds(saved).filter(id => !isModuleDeleted(id));
+  const allIds = [...Object.keys(STEP_MAP), ...customIds.filter(id => !Object.prototype.hasOwnProperty.call(STEP_MAP, id))]
+    .filter(secId => !isModuleDeleted(secId));
 
   sel.innerHTML = '';
   allIds.forEach(secId => {
@@ -4942,7 +4963,7 @@ function switchEditorModule(secId) {
   }
   const deleteBtn = document.getElementById('editor-delete-btn');
   if (deleteBtn) {
-    deleteBtn.style.display = isCustomModule(secId) ? 'inline-flex' : 'none';
+    deleteBtn.style.display = secId !== 'editor' ? 'inline-flex' : 'none';
   }
 }
 
@@ -5385,6 +5406,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Apply saved edits
   applyAllSaved(saved);
+
+  // Remove deleted modules before restoring UI
+  Object.keys(saved).forEach(key => {
+    if (key.startsWith('__deleted_module_')) {
+      const secId = key.replace('__deleted_module_', '');
+      removeModuleFromDOM(secId);
+    }
+  });
 
   // Restore custom menus (per category)
   restoreCustomMenus(saved);
