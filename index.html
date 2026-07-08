@@ -3831,49 +3831,63 @@ function showToast(msg) {
   const t = document.getElementById('global-toast');
   t.textContent = msg || '✓ Tersimpan';
   t.classList.add('show');
+  const imgInput = document.getElementById('add-step-image');
+  const imgPrev = document.getElementById('add-step-image-preview');
+  if (imgInput) { imgInput.value = ''; }
+  if (imgPrev) { imgPrev.classList.add('empty'); imgPrev.innerHTML = 'Pilih gambar untuk disisipkan pada langkah.'; }
   setTimeout(() => t.classList.remove('show'), 2800);
 }
+async function confirmAddStep() {
+  const secId = document.getElementById('add-step-secid').value;
+  const lbl = document.getElementById('add-step-lbl').value.trim();
+  const dsc = document.getElementById('add-step-dsc').value.trim();
+  const imgInput = document.getElementById('add-step-image');
+  if (!lbl) { closeModal('modal-add-step'); return; }
+  
+  const sid = secId + '_' + Date.now();
+  const num = (document.querySelectorAll('#sec-' + secId + ' .step-row').length + 1);
 
-// ═══════════════════════════════════════════════
-// MODAL HELPERS
-// ═══════════════════════════════════════════════
-function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-// Close on overlay click
-document.addEventListener('click', function(e) {
-  if (e.target.classList.contains('modal-overlay')) {
-    e.target.classList.remove('open');
+  // Read image if provided
+  let imgData = '';
+  if (imgInput && imgInput.files && imgInput.files[0]) {
+    try { imgData = await readFileAsDataURL(imgInput.files[0]); } catch(e){ console.warn('Gagal membaca file langkah', e); }
   }
-});
 
-// ═══════════════════════════════════════════════
-// EDIT MODE TOGGLE (global)
-// ═══════════════════════════════════════════════
-function toggleEditMode() {
-  _editMode = !_editMode;
-  // Show/hide step action buttons
-  document.querySelectorAll('.step-actions').forEach(a => {
-    a.classList.toggle('visible', _editMode);
-  });
-  // Show/hide add-step rows
-  document.querySelectorAll('.add-step-row').forEach(r => {
-    r.classList.toggle('visible', _editMode);
-  });
-  // Update flow toggle btn states
-  document.querySelectorAll('.flow-toggle-edit').forEach(btn => {
-    btn.classList.remove('active');
-  });
+  // Add to page view
+  const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
+  if (stepsCard) {
+    const newRow = document.createElement('div');
+    newRow.className = 'step-row';
+    newRow.id = 'sr-' + sid;
+    newRow.innerHTML = `
+      <div class="step-top">
+        <span class="step-num sn-blue">${num}</span>
+        <div class="step-body">
+          <div class="step-label" id="lbl-${sid}">${lbl}</div>
+          <div class="step-desc" id="dsc-${sid}">${dsc}</div>
+        </div>
+      </div>
+      <div class="step-img" data-step-img="${sid}">
+        <img id="img-${sid}" src="${imgData||''}" alt="" loading="lazy" ${imgData?`data-orig-src="${imgData}"`:''} />
+        <div class="img-caption" data-cap="${sid}"></div>
+      </div>
+      <div class="step-actions visible">
+        <button class="step-action-btn" onclick="openStepEdit('${sid}')">✏️ Edit</button>
+        <button class="step-action-btn danger" onclick="deleteStep('${sid}')">✕ Hapus</button>
+      </div>`;
+    const addRow = stepsCard.querySelector('.add-step-row');
+    if (addRow) stepsCard.insertBefore(newRow, addRow);
+    else stepsCard.appendChild(newRow);
+  }
+
+  // Save
+  const saved = getSaved();
+  saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId, img: imgData };
+  saveToDB(saved);
+  if (typeof initEditorSelect === 'function') initEditorSelect();
+  closeModal('modal-add-step');
+  showToast('✓ Langkah baru ditambahkan');
 }
-
-// ═══════════════════════════════════════════════
-// FLOW EDIT
-// ═══════════════════════════════════════════════
-function toggleFlowEdit(btn) {
-  const wrap = btn.closest('.flow-wrap');
   const bar = wrap.querySelector('.flow-edit-bar');
   const isActive = btn.classList.contains('active');
   // Deactivate all others
@@ -4279,6 +4293,20 @@ function handleAddMenuImageChange(event) {
   const url = URL.createObjectURL(file);
   preview.classList.remove('empty');
   preview.innerHTML = `<img src="${url}" alt="Preview gambar menu">`;
+}
+
+function handleAddStepImageChange(event) {
+  const file = event.target.files[0];
+  const preview = document.getElementById('add-step-image-preview');
+  if (!preview) return;
+  if (!file) {
+    preview.classList.add('empty');
+    preview.innerHTML = 'Pilih gambar untuk disisipkan pada langkah.';
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  preview.classList.remove('empty');
+  preview.innerHTML = `<img src="${url}" alt="Preview gambar langkah">`;
 }
 
 async function confirmAddMenu() {
@@ -5481,6 +5509,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     <div class="modal-field">
       <label>Deskripsi / Keterangan</label>
       <textarea class="modal-input" id="add-step-dsc" rows="3" placeholder="Keterangan..."></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Upload Foto (opsional)</label>
+      <input class="modal-image-input" id="add-step-image" type="file" accept="image/*" onchange="handleAddStepImageChange(event)">
+      <div class="modal-image-preview empty" id="add-step-image-preview">Pilih gambar untuk disisipkan pada langkah.</div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal('modal-add-step')">Batal</button>
