@@ -3796,6 +3796,7 @@ let _editMode = false;        // global edit mode toggle
 let _editingFlowWrap = null;  // current flow-wrap being edited
 let _selectedNode = null;     // selected SVG <g> node
 let _pendingImgs = {};        // {sid: dataURL}
+let _pendingHeaderImgs = {};  // {secId: dataURL}
 let _customSteps = {};        // {secId: [{sid,lbl,dsc,img},...]}
 let _customCats = [];         // [{id,name,color,guides:[]}]
 let _customFlows = {};        // {secId: svgInnerHTML}
@@ -4630,8 +4631,22 @@ function syncEditorModule() {
 }
 
 function getEditorOptionLabel(secId) {
+  const saved = getSaved();
+  const key = '__menu_' + secId;
+  if (saved[key] && saved[key].menuName) return saved[key].menuName;
+
   const nav = document.getElementById('nav-' + secId);
-  if (nav) return nav.textContent.trim();
+  if (nav) {
+    const label = nav.textContent.trim().replace(/^•\s*/, '');
+    if (label) {
+      if (saved[key]) {
+        saved[key].menuName = label;
+        saveToDB(saved);
+      }
+      return label;
+    }
+  }
+
   const pageTitle = document.querySelector('#sec-' + secId + ' .page-header h1');
   if (pageTitle) return pageTitle.textContent.trim();
   return secId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -4703,6 +4718,47 @@ function buildEditorStepHtml(sid) {
     </div>`;
 }
 
+function applyHeaderToPage(secId, title, desc, imgSrc) {
+  const sec = document.getElementById('sec-' + secId);
+  if (!sec) return;
+  if (title !== null) {
+    const h1 = sec.querySelector('.page-header h1');
+    if (h1) h1.textContent = title;
+  }
+  if (desc !== null) {
+    const p = sec.querySelector('.page-header p');
+    if (p) p.textContent = desc;
+  }
+  if (imgSrc !== null) {
+    const preview = sec.querySelector('.menu-image-preview');
+    if (preview) {
+      let img = preview.querySelector('img');
+      if (!img) {
+        preview.innerHTML = `<img src="${imgSrc}" alt="Gambar ${escapeHtml(title||'')}">`;
+      } else {
+        img.src = imgSrc;
+      }
+    } else {
+      const header = sec.querySelector('.page-header');
+      if (header) {
+        const div = document.createElement('div');
+        div.className = 'menu-image-preview';
+        div.innerHTML = `<img src="${imgSrc}" alt="Gambar ${escapeHtml(title||'')}">`;
+        header.parentNode.insertBefore(div, header.nextSibling);
+      }
+    }
+  }
+  const nav = document.getElementById('nav-' + secId);
+  if (nav && title !== null) {
+    const dot = nav.querySelector('.nav-dot');
+    nav.innerHTML = `${dot ? dot.outerHTML : ''}${escapeHtml(title)}`;
+  }
+  const option = document.querySelector('#editor-module-sel option[value="' + secId + '"]');
+  if (option && title !== null) {
+    option.textContent = title;
+  }
+}
+
 function createEditorModulePanel(secId) {
   const existing = document.getElementById('em-' + secId);
   const isBuiltIn = Object.prototype.hasOwnProperty.call(STEP_MAP, secId);
@@ -4714,18 +4770,79 @@ function createEditorModulePanel(secId) {
   module.id = 'em-' + secId;
   module.style.display = 'none';
   if (!stepIds.length) {
+    const pageTitleEl = document.querySelector('#sec-' + secId + ' .page-header h1');
+    const pageDescEl  = document.querySelector('#sec-' + secId + ' .page-header p');
+    const pageImgEl   = document.querySelector('#sec-' + secId + ' .menu-image-preview img');
+    const titleVal = pageTitleEl ? escapeHtml(pageTitleEl.textContent) : '';
+    const descVal  = pageDescEl  ? escapeHtml(pageDescEl.textContent)  : '';
+    const imgVal   = pageImgEl   ? pageImgEl.src : '';
     module.innerHTML = `
       <div class="editor-step">
         <div class="editor-step-head">Modul ${getEditorOptionLabel(secId)}</div>
         <div class="editor-step-body">
           <div class="editor-field">
+            <label>Judul Menu</label>
+            <input class="editor-input" id="eheader-title-${secId}" value="${titleVal}" placeholder="Judul menu..."/>
+          </div>
+          <div class="editor-field">
+            <label>Deskripsi Singkat</label>
+            <textarea class="editor-input" id="eheader-desc-${secId}">${descVal}</textarea>
+          </div>
+          <div class="editor-field">
+            <label>Gambar Header</label>
+            <div class="editor-img-row">
+              ${imgVal ? `<img class="editor-img-preview" id="eheader-prev-${secId}" src="${imgVal}" alt="preview"/>` : `<img class="editor-img-preview empty" id="eheader-prev-${secId}" src="" alt="preview"/>`}
+              <div class="editor-img-actions">
+                <label class="upload-btn">📂 Pilih Gambar<input type="file" accept="image/*" onchange="handleHeaderImgUpload(this,'${secId}')"/></label>
+                <div class="upload-hint">JPG, PNG, WebP — akan menggantikan gambar header saat ini</div>
+                <button onclick="resetHeaderImg('${secId}')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+              </div>
+            </div>
+          </div>
+          <div class="editor-field">
             <label>Info</label>
             <p>Tidak ada langkah panduan yang dipetakan untuk modul ini.</p>
+          </div>
+          <div class="add-step-row visible" style="margin-top:12px;">
+            <button class="add-step-btn" onclick="openAddStep('${secId}')">＋ Tambah Langkah</button>
           </div>
         </div>
       </div>`;
   } else {
-    module.innerHTML = stepIds.map(sid => buildEditorStepHtml(sid)).join('');
+    // build header editor
+    const pageTitleEl = document.querySelector('#sec-' + secId + ' .page-header h1');
+    const pageDescEl  = document.querySelector('#sec-' + secId + ' .page-header p');
+    const pageImgEl   = document.querySelector('#sec-' + secId + ' .menu-image-preview img');
+    const titleVal = pageTitleEl ? escapeHtml(pageTitleEl.textContent) : '';
+    const descVal  = pageDescEl  ? escapeHtml(pageDescEl.textContent)  : '';
+    const imgVal   = pageImgEl   ? pageImgEl.src : '';
+    const headerHtml = `
+      <div class="editor-step">
+        <div class="editor-step-head">Header: <span style="font-weight:400;color:var(--text2)">${getEditorOptionLabel(secId)}</span></div>
+        <div class="editor-step-body">
+          <div class="editor-field">
+            <label>Judul Menu</label>
+            <input class="editor-input" id="eheader-title-${secId}" value="${titleVal}" placeholder="Judul menu..."/>
+          </div>
+          <div class="editor-field">
+            <label>Deskripsi Singkat</label>
+            <textarea class="editor-input" id="eheader-desc-${secId}">${descVal}</textarea>
+          </div>
+          <div class="editor-field">
+            <label>Gambar Header</label>
+            <div class="editor-img-row">
+              ${imgVal ? `<img class="editor-img-preview" id="eheader-prev-${secId}" src="${imgVal}" alt="preview"/>` : `<img class="editor-img-preview empty" id="eheader-prev-${secId}" src="" alt="preview"/>`}
+              <div class="editor-img-actions">
+                <label class="upload-btn">📂 Pilih Gambar<input type="file" accept="image/*" onchange="handleHeaderImgUpload(this,'${secId}')"/></label>
+                <div class="upload-hint">JPG, PNG, WebP — akan menggantikan gambar header saat ini</div>
+                <button onclick="resetHeaderImg('${secId}')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    module.innerHTML = headerHtml + stepIds.map(sid => buildEditorStepHtml(sid)).join('');
   }
   const editorBody = document.querySelector('.editor-body');
   if (editorBody && !existing) editorBody.appendChild(module);
@@ -4790,6 +4907,32 @@ function handleImgUpload(input, sid) {
   reader.readAsDataURL(input.files[0]);
 }
 
+function handleHeaderImgUpload(input, secId) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    const prevEl = document.getElementById('eheader-prev-' + secId);
+    if (prevEl) { prevEl.src = dataUrl; prevEl.classList.remove('empty'); }
+    _pendingHeaderImgs[secId] = dataUrl;
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function resetHeaderImg(secId) {
+  const sec = document.getElementById('sec-' + secId);
+  const prevEl = document.getElementById('eheader-prev-' + secId);
+  if (sec && prevEl) {
+    const orig = sec.querySelector('.menu-image-preview img')?.getAttribute('data-orig-src') || sec.querySelector('.menu-image-preview img')?.src || '';
+    prevEl.src = orig;
+    if (!orig) prevEl.classList.add('empty');
+  }
+  delete _pendingHeaderImgs[secId];
+  const saved = getSaved();
+  const key = '__menu_' + secId;
+  if (saved[key]) { delete saved[key].menuImage; saveToDB(saved); }
+}
+
 function resetImg(sid) {
   const pageImg = document.getElementById('img-' + sid);
   const prevEl  = document.getElementById('eprev-' + sid);
@@ -4815,7 +4958,34 @@ function saveEdits() {
     if (!saved[sid]) saved[sid] = {};
     saved[sid].img = _pendingImgs[sid];
   }
+
+  // Header edits (title / desc)
+  document.querySelectorAll('[id^="eheader-title-"], [id^="eheader-desc-"]').forEach(input => {
+    const match = input.id.match(/^eheader-(title|desc)-(.+)$/);
+    if (!match) return;
+    const secId = match[2];
+    const key = '__menu_' + secId;
+    if (!saved[key]) saved[key] = { menuId: secId };
+    if (match[1] === 'title') saved[key].menuName = document.getElementById('eheader-title-' + secId).value;
+    else saved[key].menuDesc = document.getElementById('eheader-desc-' + secId).value;
+  });
+
+  for (const secId in _pendingHeaderImgs) {
+    if (!_pendingHeaderImgs.hasOwnProperty(secId)) continue;
+    const key = '__menu_' + secId;
+    if (!saved[key]) saved[key] = { menuId: secId };
+    saved[key].menuImage = _pendingHeaderImgs[secId];
+  }
+
   saveToDB(saved);
+  // Apply header changes to page immediately
+  for (const k in saved) {
+    if (!k.startsWith('__menu_')) continue;
+    const d = saved[k];
+    const secId = d.menuId;
+    if (!secId) continue;
+    applyHeaderToPage(secId, d.menuName||null, d.menuDesc||null, d.menuImage||null);
+  }
   applyAllSaved(saved);
   showNotice();
   showToast('💾 Semua perubahan tersimpan!');
@@ -4868,6 +5038,22 @@ function saveAll() {
     if (!_pendingImgs.hasOwnProperty(sid)) continue;
     if (!saved[sid]) saved[sid] = {};
     saved[sid].img = _pendingImgs[sid];
+  }
+  // Header batch save
+  document.querySelectorAll('[id^="eheader-title-"], [id^="eheader-desc-"]').forEach(input => {
+    const match = input.id.match(/^eheader-(title|desc)-(.+)$/);
+    if (!match) return;
+    const secId = match[2];
+    const key = '__menu_' + secId;
+    if (!saved[key]) saved[key] = { menuId: secId };
+    if (match[1] === 'title') saved[key].menuName = document.getElementById('eheader-title-' + secId).value;
+    else saved[key].menuDesc = document.getElementById('eheader-desc-' + secId).value;
+  });
+  for (const secId in _pendingHeaderImgs) {
+    if (!_pendingHeaderImgs.hasOwnProperty(secId)) continue;
+    const key = '__menu_' + secId;
+    if (!saved[key]) saved[key] = { menuId: secId };
+    saved[key].menuImage = _pendingHeaderImgs[secId];
   }
   saveToDB(saved);
 }
