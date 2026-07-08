@@ -1618,7 +1618,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="editor-save-btn" onclick="saveEdits()">💾 Simpan Perubahan</button>
         <button class="editor-reset-btn" onclick="resetAll()">↺ Reset Semua</button>
-        <button class="editor-reset-btn" onclick="openDeletedModulesModal()" id="editor-restore-btn" title="Pulihkan modul yang terhapus">♻️ Pulihkan Modul</button>
         <button class="editor-reset-btn" id="editor-delete-btn" onclick="confirmDeleteModule()" style="display:none;background:#ff5757;color:#fff;border-color:#ff5757;">🗑️ Hapus Modul</button>
       </div>
     </div>
@@ -3899,49 +3898,7 @@ async function confirmAddStep() {
   showToast('✓ Langkah baru ditambahkan');
 }
 
-function openDeletedModulesModal() {
-  const listEl = document.getElementById('deleted-mod-list');
-  if (!listEl) return;
-  const saved = getSaved();
-  const keys = Object.keys(saved).filter(k => k.startsWith('__deleted_module_'));
-  if (!keys.length) {
-    listEl.innerHTML = '<div style="padding:8px;color:var(--text2)">Tidak ada modul yang terhapus.</div>';
-    openModal('modal-restore-deleted');
-    return;
-  }
-  listEl.innerHTML = '';
-  keys.forEach(k => {
-    const secId = k.replace('__deleted_module_','');
-    const menuKey = '__menu_' + secId;
-    let label = secId;
-    if (saved[menuKey] && saved[menuKey].menuName) label = saved[menuKey].menuName;
-    else {
-      const nav = document.getElementById('nav-' + secId);
-      if (nav) label = nav.textContent.trim().replace(/^•\s*/,'');
-      else {
-        const page = document.getElementById('sec-' + secId);
-        if (page) label = page.querySelector('h1')?.textContent?.trim() || secId;
-      }
-    }
-    const row = document.createElement('div');
-    row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.alignItems='center'; row.style.padding='6px 0';
-    row.innerHTML = `<div style="color:var(--text);font-weight:600">${escapeHtml(label)}</div>`;
-    const btn = document.createElement('button'); btn.className = 'modal-btn primary'; btn.style.padding='6px 10px'; btn.textContent = 'Pulihkan';
-    btn.onclick = () => { restoreDeletedModule(secId); };
-    row.appendChild(btn);
-    listEl.appendChild(row);
-  });
-  openModal('modal-restore-deleted');
-}
 
-function restoreDeletedModule(secId) {
-  const saved = getSaved();
-  const key = '__deleted_module_' + secId;
-  if (saved[key]) delete saved[key];
-  saveToDB(saved);
-  showToast('♻️ Modul dipulihkan — memuat ulang halaman');
-  setTimeout(() => location.reload(), 800);
-}
   const bar = wrap.querySelector('.flow-edit-bar');
   const isActive = btn.classList.contains('active');
   // Deactivate all others
@@ -5639,17 +5596,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     </div>
   </div>
 
-    <div class="modal-overlay" id="modal-restore-deleted">
-      <div class="modal-box">
-        <div class="modal-title">♻️ Pulihkan Modul Terhapus</div>
-        <div class="modal-field">
-          <div id="deleted-mod-list" style="max-height:300px;overflow:auto;padding:6px 0;">Memuat daftar...</div>
-        </div>
-        <div class="modal-actions">
-          <button class="modal-btn secondary" onclick="closeModal('modal-restore-deleted')">Tutup</button>
-        </div>
-      </div>
-    </div>
+    
 </div>
 
 <div class="modal-overlay" id="modal-add-menu">
