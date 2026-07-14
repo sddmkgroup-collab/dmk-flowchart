@@ -3887,6 +3887,7 @@ function toggleFlowEdit(btn) {
     _editingFlowWrap = wrap;
     // Make SVG nodes clickable
     enableFlowNodeSelect(wrap);
+    makeSvgNodesDraggable(wrap);
   } else {
     _editingFlowWrap = null;
   }
@@ -3903,6 +3904,64 @@ function enableFlowNodeSelect(wrap) {
       g.style.outline = '2.5px solid var(--dmk-blue)';
       _selectedNode = g;
     };
+  });
+}
+
+// Make SVG flow nodes draggable while in edit mode
+function makeSvgNodesDraggable(wrap) {
+  const svg = wrap.querySelector('svg.flow');
+  if (!svg) return;
+  svg.querySelectorAll('g[class^="fc-"]').forEach(g => {
+    const rect = g.querySelector('rect');
+    if (!rect) return;
+    g.style.touchAction = 'none';
+    const GRID_SIZE = 20;
+    let dragging = false; let startX=0, startY=0, origX=0, origY=0;
+    function onPointerDown(e){
+      // only allow dragging when edit mode is active for this wrap
+      if (!wrap.querySelector('.flow-toggle-edit').classList.contains('active')) return;
+      dragging = true;
+      g.setPointerCapture(e.pointerId);
+      startX = e.clientX; startY = e.clientY;
+      origX = parseFloat(rect.getAttribute('x')||'0');
+      origY = parseFloat(rect.getAttribute('y')||'0');
+      g.classList.add('dragging');
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    }
+    function onPointerMove(e){
+      if(!dragging) return;
+      const dx = e.clientX - startX; const dy = e.clientY - startY;
+      const nx = Math.round(origX + dx); const ny = Math.round(origY + dy);
+      rect.setAttribute('x', nx);
+      rect.setAttribute('y', ny);
+      layoutFlowNode(g);
+    }
+    function onPointerUp(e){
+      if(!dragging) return;
+      dragging = false; g.classList.remove('dragging');
+      try { g.releasePointerCapture(e.pointerId); } catch(_){}
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      // persist update to _customFlows and trigger saveAll
+      const sec = wrap.closest('.section');
+      if (sec) {
+        const secId = sec.id.replace('sec-','');
+        // snap to grid
+        const curX = parseFloat(rect.getAttribute('x')||'0');
+        const curY = parseFloat(rect.getAttribute('y')||'0');
+        const snapX = Math.round(curX / GRID_SIZE) * GRID_SIZE;
+        const snapY = Math.round(curY / GRID_SIZE) * GRID_SIZE;
+        rect.setAttribute('x', snapX);
+        rect.setAttribute('y', snapY);
+        layoutFlowNode(g);
+        _customFlows[secId] = svg.innerHTML;
+      }
+      saveAll();
+      showToast('✓ Posisi node tersimpan');
+    }
+    g.removeEventListener('pointerdown', onPointerDown);
+    g.addEventListener('pointerdown', onPointerDown);
   });
 }
 
@@ -4103,6 +4162,7 @@ function confirmNodeEdit() {
       _selectedNode = g;
     };
     enableFlowNodeSelect(svg.closest('.flow-wrap'));
+    makeSvgNodesDraggable(svg.closest('.flow-wrap'));
   }
   closeModal('modal-add-node');
   showToast('✓ Node diperbarui');
@@ -5135,6 +5195,14 @@ function saveAll() {
     if (!saved[key]) saved[key] = { menuId: secId };
     saved[key].menuImage = _pendingHeaderImgs[secId];
   }
+  // Persist any custom SVG flows
+  try {
+    for (const secId in _customFlows) {
+      if (!_customFlows.hasOwnProperty(secId)) continue;
+      const key = '__flow_' + secId;
+      saved[key] = _customFlows[secId];
+    }
+  } catch(e) { console.warn('Error serializing custom flows', e); }
   saveToDB(saved);
 }
 
@@ -5144,6 +5212,26 @@ function applyAllSaved(saved) {
     const d = saved[sid];
     applyToPage(sid, d.label||null, d.desc||null, d.img||null);
   }
+
+  // Apply saved custom flows (keys: __flow_<secId>)
+  Object.keys(saved).forEach(k => {
+    if (!k.startsWith('__flow_')) return;
+    const secId = k.replace('__flow_','');
+    const sec = document.getElementById('sec-' + secId);
+    if (!sec) return;
+    const wrap = sec.querySelector('.flow-wrap');
+    if (!wrap) return;
+    const svg = wrap.querySelector('svg.flow');
+    if (!svg) return;
+    try {
+      svg.innerHTML = saved[k] || svg.innerHTML;
+      // re-enable interactions on restored svg
+      enableFlowNodeSelect(wrap);
+      makeSvgNodesDraggable(wrap);
+      // keep in-memory custom flows in sync
+      _customFlows[secId] = svg.innerHTML;
+    } catch(e) { console.warn('Apply flow failed for', secId, e); }
+  });
 }
 
 function applyToPage(sid, label, desc, imgSrc) {
