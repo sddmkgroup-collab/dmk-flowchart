@@ -3955,6 +3955,8 @@ function makeSvgNodesDraggable(wrap) {
         rect.setAttribute('x', snapX);
         rect.setAttribute('y', snapY);
         layoutFlowNode(g);
+        // update connecting edges to follow moved nodes
+        try { updateFlowEdges(wrap); } catch(e) {}
         _customFlows[secId] = svg.innerHTML;
       }
       saveAll();
@@ -3963,6 +3965,121 @@ function makeSvgNodesDraggable(wrap) {
     g.removeEventListener('pointerdown', onPointerDown);
     g.addEventListener('pointerdown', onPointerDown);
   });
+}
+
+// Update line endpoints to follow nearest node centers
+function updateFlowEdges(wrap) {
+  const svg = wrap.querySelector('svg.flow');
+  if (!svg) return;
+  const nodes = [];
+  svg.querySelectorAll('g[class^="fc-"]').forEach(g => {
+    const rect = g.querySelector('rect');
+    if (!rect) return;
+    const x = parseFloat(rect.getAttribute('x')||'0');
+    const y = parseFloat(rect.getAttribute('y')||'0');
+    const w = parseFloat(rect.getAttribute('width')||'0');
+    const h = parseFloat(rect.getAttribute('height')||'0');
+    nodes.push({g, cx: x + w/2, cy: y + h/2});
+  });
+  // Update simple <line> elements
+  svg.querySelectorAll('line').forEach(line => {
+    const x1 = parseFloat(line.getAttribute('x1')||'0');
+    const y1 = parseFloat(line.getAttribute('y1')||'0');
+    const x2 = parseFloat(line.getAttribute('x2')||'0');
+    const y2 = parseFloat(line.getAttribute('y2')||'0');
+    if (nodes.length < 2) return;
+    // find nearest node to start and end
+    let a = nodes[0], b = nodes[0]; let bestA = Infinity, bestB = Infinity;
+    nodes.forEach(n => {
+      const da = Math.hypot(n.cx - x1, n.cy - y1);
+      if (da < bestA) { bestA = da; a = n; }
+      const db = Math.hypot(n.cx - x2, n.cy - y2);
+      if (db < bestB) { bestB = db; b = n; }
+    });
+    // If different, set endpoints to node centers
+    if (a && b) {
+      line.setAttribute('x1', Math.round(a.cx));
+      line.setAttribute('y1', Math.round(a.cy));
+      line.setAttribute('x2', Math.round(b.cx));
+      line.setAttribute('y2', Math.round(b.cy));
+    }
+  });
+
+  // Update curved paths (simple cubic bezier) and polylines
+  svg.querySelectorAll('path').forEach(path => {
+    // only handle decorative/connection paths (class contains 'arr' or has marker-end)
+    const cls = (path.getAttribute('class')||'');
+    const hasMarker = !!path.getAttribute('marker-end');
+    if (!cls.includes('arr') && !hasMarker) return;
+    // pick current bounding midpoints as hints
+    const bbox = path.getBBox ? path.getBBox() : { x:0,y:0,width:0,height:0 };
+    const startGuessX = bbox.x; const startGuessY = bbox.y + bbox.height/2;
+    const endGuessX = bbox.x + bbox.width; const endGuessY = bbox.y + bbox.height/2;
+    if (nodes.length < 2) return;
+    let a = nodes[0], b = nodes[0]; let bestA = Infinity, bestB = Infinity;
+    nodes.forEach(n => {
+      const da = Math.hypot(n.cx - startGuessX, n.cy - startGuessY);
+      if (da < bestA) { bestA = da; a = n; }
+      const db = Math.hypot(n.cx - endGuessX, n.cy - endGuessY);
+      if (db < bestB) { bestB = db; b = n; }
+    });
+    if (a && b) {
+      const x1 = Math.round(a.cx), y1 = Math.round(a.cy);
+      const x2 = Math.round(b.cx), y2 = Math.round(b.cy);
+      const dx = x2 - x1, dy = y2 - y1;
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      // base factor for control points
+      const factor = 0.25;
+      let c1x, c1y, c2x, c2y;
+      if (absDx > absDy) {
+        // mostly horizontal: control points offset along x
+        c1x = Math.round(x1 + dx * factor);
+        c1y = y1;
+        c2x = Math.round(x2 - dx * factor);
+        c2y = y2;
+      } else {
+        // mostly vertical: offset along y
+        c1x = x1;
+        c1y = Math.round(y1 + dy * factor);
+        c2x = x2;
+        c2y = Math.round(y2 - dy * factor);
+      }
+      // add small perpendicular offset to give curve a nicer bend
+      const perpMag = Math.round(Math.min(60, Math.max(12, Math.max(absDx, absDy) * 0.12)));
+      const perpSign = Math.sign(dy || 1);
+      if (absDx > absDy) {
+        c1y += perpSign * perpMag;
+        c2y -= perpSign * perpMag;
+      } else {
+        c1x += perpSign * perpMag;
+        c2x -= perpSign * perpMag;
+      }
+      const d = `M ${x1} ${y1} C ${c1x} ${c1y} ${c2x} ${c2y} ${x2} ${y2}`;
+      path.setAttribute('d', d);
+    }
+  });
+
+  svg.querySelectorAll('polyline').forEach(poly => {
+    const cls = (poly.getAttribute('class')||'');
+    const hasMarker = !!poly.getAttribute('marker-end');
+    if (!cls.includes('arr') && !hasMarker) return;
+    // use bbox midpoint approach to find nearest nodes for start/end
+    const bbox = poly.getBBox ? poly.getBBox() : { x:0,y:0,width:0,height:0 };
+    const startGuessX = bbox.x; const startGuessY = bbox.y + bbox.height/2;
+    const endGuessX = bbox.x + bbox.width; const endGuessY = bbox.y + bbox.height/2;
+    if (nodes.length < 2) return;
+    let a = nodes[0], b = nodes[0]; let bestA = Infinity, bestB = Infinity;
+    nodes.forEach(n => {
+      const da = Math.hypot(n.cx - startGuessX, n.cy - startGuessY);
+      if (da < bestA) { bestA = da; a = n; }
+      const db = Math.hypot(n.cx - endGuessX, n.cy - endGuessY);
+      if (db < bestB) { bestB = db; b = n; }
+    });
+    if (a && b) {
+      poly.setAttribute('points', `${Math.round(a.cx)},${Math.round(a.cy)} ${Math.round(b.cx)},${Math.round(b.cy)}`);
+    }
+  });
+  // Optionally update paths if present (not covered here)
 }
 
 function addFlowNodeUI(btn) {
@@ -4096,6 +4213,7 @@ function layoutFlowNode(g) {
   if (requiredWidth > vb[2]) {
     svg.setAttribute('viewBox', `0 0 ${requiredWidth} ${vb[3]}`);
   }
+  try { const wrap = svg.closest('.flow-wrap'); if (wrap) updateFlowEdges(wrap); } catch(e) {}
 }
 
 function confirmNodeEdit() {
@@ -4163,6 +4281,7 @@ function confirmNodeEdit() {
     };
     enableFlowNodeSelect(svg.closest('.flow-wrap'));
     makeSvgNodesDraggable(svg.closest('.flow-wrap'));
+    try { updateFlowEdges(svg.closest('.flow-wrap')); } catch(e) {}
   }
   closeModal('modal-add-node');
   showToast('✓ Node diperbarui');
@@ -4433,10 +4552,60 @@ async function confirmAddMenu() {
   showToast('✓ Menu "' + menuName + '" berhasil ditambahkan ke ' + catName + '!');
 }
 
-function restoreCustomMenus(saved) {
+function addMenuToCategory(catKey, menu) {
+  if (!menu) return;
+  const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[(menu.color||'gray')] || '#5f5e5a';
+  const menuId = menu.menuId || menu.id || (menu.menuKey) || (menu.menuId) || '';
+  const menuName = menu.menuName || menu.name || menu.title || menuId || '';
+  const navSec = document.getElementById('nav-sec-' + catKey) || document.querySelector('.sidebar [data-catkey="'+catKey+'"]');
+  if (navSec) {
+    const addBtn = navSec.querySelector('.nav-add-menu-btn');
+    if (!document.getElementById('nav-' + menuId)) {
+      const newBtn = document.createElement('button');
+      newBtn.className = 'nav-item';
+      newBtn.id = 'nav-' + menuId;
+      newBtn.onclick = () => go(menuId);
+      newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${menuName}`;
+      navSec.insertBefore(newBtn, addBtn);
+    }
+  }
+  // create basic section if missing
+  if (!document.getElementById('sec-' + menuId)) {
+    const main = document.querySelector('.main');
+    const secDiv = document.createElement('div');
+    secDiv.className = 'section';
+    secDiv.id = 'sec-' + menuId;
+    secDiv.innerHTML = `<div class="page-header"><h1>${menuName}</h1><p>${menu.description||menu.menuDesc||''}</p></div>`;
+    main.appendChild(secDiv);
+  }
+}
+
+function restoreCustomMenus(saved = null) {
+  if (!saved) saved = getSaved();
   for (const key in saved) {
     if (!key.startsWith('__menu_')) continue;
-    const { catKey, catName, color, menuName, menuDesc, menuId, menuImage } = saved[key];
+    const raw = saved[key] || {};
+    const catKey = raw.catKey || raw.category || raw.cat || '';
+    const catName = raw.catName || raw.categoryName || '';
+    const color = raw.color || 'gray';
+    const menuId = raw.menuId || raw.menuKey || key.replace('__menu_','');
+    // Resolve menu name from multiple possible properties or fallbacks
+    const menuName = raw.menuName || raw.name || raw.title || (document.querySelector('#sec-' + menuId + ' .page-header h1')?.textContent) || menuId;
+    const menuDesc = raw.menuDesc || raw.desc || '';
+    const menuImage = raw.menuImage || raw.menuImg || '';
+    // If saved entry lacked useful fields, persist the inferred values back
+    try {
+      const cur = getSaved();
+      if (!cur[key]) cur[key] = {};
+      if (!cur[key].menuName) cur[key].menuName = menuName;
+      if (!cur[key].catKey) cur[key].catKey = catKey;
+      if (!cur[key].catName) cur[key].catName = catName;
+      if (!cur[key].color) cur[key].color = color;
+      if (!cur[key].menuId) cur[key].menuId = menuId;
+      if (!cur[key].menuDesc && menuDesc) cur[key].menuDesc = menuDesc;
+      if (!cur[key].menuImage && menuImage) cur[key].menuImage = menuImage;
+      saveToDB(cur);
+    } catch(e) { /* ignore save errors */ }
     if (document.getElementById('sec-' + menuId)) continue; // already exists
 
     const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
@@ -4523,6 +4692,37 @@ function restoreCustomMenus(saved) {
         stepsCard.insertBefore(newRow, addRow);
       }
     }
+  }
+}
+
+// Try to fix missing menu names in saved data (localStorage / Supabase)
+function fixMissingMenuNames(saved = null) {
+  try {
+    const s = saved || getSaved();
+    let changed = false;
+    for (const key in s) {
+      if (!key.startsWith('__menu_')) continue;
+      const raw = s[key] || {};
+      const menuId = raw.menuId || raw.menuKey || key.replace('__menu_','');
+      const inferred = raw.menuName || raw.name || raw.title || (document.querySelector('#sec-' + menuId + ' .page-header h1')?.textContent) || menuId;
+      if (inferred && !raw.menuName) {
+        raw.menuName = inferred;
+        s[key] = raw;
+        changed = true;
+        console.log('fixMissingMenuNames: inferred', key, '→', inferred);
+      }
+      // ensure nav button exists for this menu
+      const catKey = raw.catKey || raw.category || raw.cat || '';
+      if (catKey) addMenuToCategory(catKey, raw);
+    }
+    if (changed) {
+      saveToDB(s);
+      console.log('fixMissingMenuNames: saved updates to storage');
+    } else {
+      console.log('fixMissingMenuNames: no missing menu names found');
+    }
+  } catch (e) {
+    console.warn('fixMissingMenuNames failed', e);
   }
 }
 
@@ -5227,7 +5427,8 @@ function applyAllSaved(saved) {
       svg.innerHTML = saved[k] || svg.innerHTML;
       // re-enable interactions on restored svg
       enableFlowNodeSelect(wrap);
-      makeSvgNodesDraggable(wrap);
+      	  makeSvgNodesDraggable(wrap);
+      	  try { updateFlowEdges(wrap); } catch(e) {}
       // keep in-memory custom flows in sync
       _customFlows[secId] = svg.innerHTML;
     } catch(e) { console.warn('Apply flow failed for', secId, e); }
@@ -5466,7 +5667,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Update status: loading
   updateSupabaseStatus(false);
-
   // Test Supabase Storage connection
   if (window._SUPABASE_URL && window._SUPABASE_ANON_KEY) {
     testSupabaseStorageConnection().then(isConnected => {
@@ -5476,8 +5676,17 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Load data (async - Supabase or localStorage fallback)
-  let saved = {};
+  // Fast-path: apply local saved first for snappy UI
+  let savedLocal = getSaved();
+  applyAllSaved(savedLocal);
+  // Auto-fix any missing menu names saved in storage
+  try { fixMissingMenuNames(savedLocal); } catch(e) { console.warn('Auto-fix menus failed', e); }
+  restoreCustomMenus(savedLocal);
+  restoreCustomCategories();
+  initEditor();
+  go('curr-daily');
+
+  // Then try to fetch remote saved data and apply if different
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       const res = await fetch(
@@ -5486,44 +5695,34 @@ window.addEventListener('DOMContentLoaded', async () => {
       );
       if (res.ok) {
         const rows = await res.json();
-        saved = rows[0]?.data || {};
-        _savedCache = saved;
+        const savedRemote = rows[0]?.data || {};
+        _savedCache = savedRemote;
         updateSupabaseStatus(true);
-        // Sync to localStorage as backup
-        try { localStorage.setItem('d365_edits', JSON.stringify(saved)); } catch(e) {}
+        try { localStorage.setItem('d365_edits', JSON.stringify(savedRemote)); } catch(e) {}
+        // If remote differs from local, re-apply to sync UI
+        const localStr = JSON.stringify(savedLocal || {});
+        const remoteStr = JSON.stringify(savedRemote || {});
+        if (remoteStr !== localStr) {
+          applyAllSaved(savedRemote);
+          // remove deleted modules
+          Object.keys(savedRemote).forEach(key => {
+            if (key.startsWith('__deleted_module_')) {
+              const secId = key.replace('__deleted_module_', '');
+              removeModuleFromDOM(secId);
+            }
+          });
+          restoreCustomMenus(savedRemote);
+          restoreCustomCategories();
+          initEditor();
+        }
       } else {
         throw new Error('HTTP ' + res.status);
       }
     } catch(e) {
-      console.warn('Supabase load failed, using localStorage:', e);
-      saved = getSaved();
+      console.warn('Supabase load failed, staying with localStorage:', e);
       updateSupabaseStatus(false);
     }
-  } else {
-    saved = getSaved();
-    updateSupabaseStatus(false);
   }
-
-  // Apply saved edits
-  applyAllSaved(saved);
-
-  // Remove deleted modules before restoring UI
-  Object.keys(saved).forEach(key => {
-    if (key.startsWith('__deleted_module_')) {
-      const secId = key.replace('__deleted_module_', '');
-      removeModuleFromDOM(secId);
-    }
-  });
-
-  // Restore custom menus (per category)
-  restoreCustomMenus(saved);
-
-  // Restore custom categories (full new categories)
-  restoreCustomCategories();
-  initEditor();
-
-  // Activate first section on load
-  go('curr-daily');
 });
 </script>
 
