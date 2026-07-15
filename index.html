@@ -4378,6 +4378,8 @@ function restoreCustomMenus(saved) {
     if (!key.startsWith('__menu_')) continue;
     const { catKey, catName, color, menuName, menuDesc, menuId, menuImage } = saved[key];
     if (document.getElementById('sec-' + menuId)) continue; // already exists
+    const displayName = menuName || catName;
+    const displayDesc = menuDesc || 'Panduan ' + displayName + ' di ' + catName + ' Microsoft Dynamics 365 Business Central.';
 
     const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
     const tagClass = { blue:'tag-finance', green:'tag-scm', amber:'tag-prod', gray:'tag-master' }[color] || 'tag-master';
@@ -4392,7 +4394,7 @@ function restoreCustomMenus(saved) {
         newBtn.className = 'nav-item';
         newBtn.id = 'nav-' + menuId;
         newBtn.onclick = () => go(menuId);
-        newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${menuName}`;
+        newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${displayName}`;
         navSec.insertBefore(newBtn, addBtn);
       }
     }
@@ -4405,13 +4407,13 @@ function restoreCustomMenus(saved) {
     secDiv.innerHTML = `
       <div class="page-header">
         <div class="breadcrumb" style="display:flex;align-items:center;gap:5px;">
-          <span style="color:var(--text3)">${catName} </span><span>›</span><span>${menuName}</span>
+          <span style="color:var(--text3)">${catName} </span><span>›</span><span>${displayName}</span>
         </div>
-        <h1>${menuName}</h1><p>${menuDesc || ''}</p>
+        <h1>${displayName}</h1><p>${displayDesc}</p>
       </div>
-      ${menuImage ? `<div class="menu-image-preview"><img src="${menuImage}" alt="Gambar ${menuName}"></div>` : ''}
+      ${menuImage ? `<div class="menu-image-preview"><img src="${menuImage}" alt="Gambar ${displayName}"></div>` : ''}
       <div class="process-block">
-        <div class="process-title">Alur Proses <span class="tag ${tagClass}">${catName} › ${menuName}</span></div>
+        <div class="process-title">Alur Proses <span class="tag ${tagClass}">${catName} › ${displayName}</span></div>
         <div class="flow-wrap">
           <button class="flow-toggle-edit" onclick="toggleFlowEdit(this)" title="Edit alur">✏️ Edit Alur</button>
           <div class="flow-edit-bar"><span>✏️ Mode Edit Alur:</span>
@@ -4424,7 +4426,7 @@ function restoreCustomMenus(saved) {
             <defs><marker id="ARR_${menuId}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
             <g class="fc-gray"><rect x="8" y="24" width="64" height="40" rx="7" stroke-width="0.5"/><text x="40" y="44" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Mulai</text></g>
             <line x1="72" y1="44" x2="100" y2="44" class="arr" marker-end="url(#ARR_${menuId})"/>
-            <g class="${fcClass}"><rect x="100" y="14" width="160" height="60" rx="7" stroke-width="0.5"/><text x="180" y="39" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">${menuName}</text><text x="180" y="57" text-anchor="middle" dominant-baseline="central" font-size="11">${catName}</text></g>
+            <g class="${fcClass}"><rect x="100" y="14" width="160" height="60" rx="7" stroke-width="0.5"/><text x="180" y="39" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">${displayName}</text><text x="180" y="57" text-anchor="middle" dominant-baseline="central" font-size="11">${catName}</text></g>
             <line x1="260" y1="44" x2="290" y2="44" class="arr" marker-end="url(#ARR_${menuId})"/>
             <g class="fc-teal"><rect x="290" y="24" width="140" height="40" rx="7" stroke-width="0.5"/><text x="360" y="44" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Selesai</text></g>
           </svg>
@@ -4433,7 +4435,7 @@ function restoreCustomMenus(saved) {
       <div class="process-block">
         <div class="process-title">Panduan Langkah</div>
         <div class="steps-card">
-          <div class="steps-header">Panduan DMK Group — ${catName} › ${menuName}</div>
+          <div class="steps-header">Panduan DMK Group — ${catName} › ${displayName}</div>
           <div class="add-step-row visible">
             <button class="add-step-btn" onclick="openAddStep('${menuId}')">＋ Tambah Langkah</button>
           </div>
@@ -5046,8 +5048,12 @@ function saveEdits() {
     const secId = match[2];
     const key = '__menu_' + secId;
     if (!saved[key]) saved[key] = { menuId: secId };
-    if (match[1] === 'title') saved[key].menuName = document.getElementById('eheader-title-' + secId).value;
-    else saved[key].menuDesc = document.getElementById('eheader-desc-' + secId).value;
+    if (match[1] === 'title') {
+      const value = document.getElementById('eheader-title-' + secId).value.trim();
+      if (value) saved[key].menuName = value;
+    } else {
+      saved[key].menuDesc = document.getElementById('eheader-desc-' + secId).value;
+    }
   });
 
   for (const secId in _pendingHeaderImgs) {
@@ -5126,8 +5132,12 @@ function saveAll() {
     const secId = match[2];
     const key = '__menu_' + secId;
     if (!saved[key]) saved[key] = { menuId: secId };
-    if (match[1] === 'title') saved[key].menuName = document.getElementById('eheader-title-' + secId).value;
-    else saved[key].menuDesc = document.getElementById('eheader-desc-' + secId).value;
+    if (match[1] === 'title') {
+      const value = document.getElementById('eheader-title-' + secId).value.trim();
+      if (value) saved[key].menuName = value;
+    } else {
+      saved[key].menuDesc = document.getElementById('eheader-desc-' + secId).value;
+    }
   });
   for (const secId in _pendingHeaderImgs) {
     if (!_pendingHeaderImgs.hasOwnProperty(secId)) continue;
