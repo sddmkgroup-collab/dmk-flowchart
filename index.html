@@ -4121,19 +4121,31 @@ function deleteFlowNodeUI(btn) {
 }
 
 function saveFlowEdits(btn) {
-  const wrap = btn.closest('.flow-wrap');
-  const sec = wrap.closest('.section');
-  if (sec) {
-    const secId = sec.id.replace('sec-','');
-    const svg = wrap.querySelector('svg.flow');
-    if (svg) _customFlows[secId] = svg.innerHTML;
+  try {
+    const wrap = btn.closest('.flow-wrap');
+    if (!wrap) {
+      console.warn('saveFlowEdits: missing .flow-wrap');
+      return;
+    }
+    const sec = wrap.closest('.section');
+    if (sec) {
+      const secId = sec.id.replace('sec-','');
+      const svg = wrap.querySelector('svg.flow');
+      if (svg) {
+        _customFlows[secId] = svg.innerHTML;
+        try { updateFlowEdges(wrap); } catch(e) { console.warn('saveFlowEdits updateFlowEdges failed', e); }
+      }
+    }
+    saveAll();
+    showToast('💾 Alur tersimpan');
+    // Deactivate
+    wrap.querySelector('.flow-toggle-edit')?.classList.remove('active');
+    wrap.querySelector('.flow-edit-bar')?.classList.remove('visible');
+    _editingFlowWrap = null;
+  } catch(e) {
+    console.error('saveFlowEdits failed', e);
+    showToast('⚠️ Gagal menyimpan alur, lihat console');
   }
-  saveAll();
-  showToast('💾 Alur tersimpan');
-  // Deactivate
-  wrap.querySelector('.flow-toggle-edit').classList.remove('active');
-  wrap.querySelector('.flow-edit-bar').classList.remove('visible');
-  _editingFlowWrap = null;
 }
 
 function layoutFlowNode(g) {
@@ -4217,74 +4229,89 @@ function layoutFlowNode(g) {
 }
 
 function confirmNodeEdit() {
-  const mode = document.getElementById('editing-node-g').value;
-  const line1 = document.getElementById('node-line1').value.trim();
-  const line2 = document.getElementById('node-line2').value.trim();
-  const color = document.getElementById('node-color').value;
-  const svg = window._editingNodeSvg;
-  if (!svg || !line1) { closeModal('modal-add-node'); return; }
+  try {
+    const mode = document.getElementById('editing-node-g').value;
+    const line1 = document.getElementById('node-line1').value.trim();
+    const line2 = document.getElementById('node-line2').value.trim();
+    const color = document.getElementById('node-color').value;
+    const svg = window._editingNodeSvg;
+    if (!svg || !line1) { closeModal('modal-add-node'); return; }
 
-  const ns = 'http://www.w3.org/2000/svg';
-  if (mode === '__edit__' && _selectedNode) {
-    _selectedNode.className.baseVal = color;
-    let text1 = _selectedNode.querySelector('text:nth-of-type(1)');
-    if (!text1) {
-      text1 = document.createElementNS(ns, 'text');
-      _selectedNode.appendChild(text1);
-    }
-    text1.textContent = line1;
-
-    let text2 = _selectedNode.querySelector('text:nth-of-type(2)');
-    if (line2) {
-      if (!text2) {
-        text2 = document.createElementNS(ns, 'text');
-        _selectedNode.appendChild(text2);
-      }
-      text2.textContent = line2;
-    } else if (text2) {
-      text2.remove();
-    }
-    layoutFlowNode(_selectedNode);
-  } else if (mode === '__new__') {
-    // Find viewBox to position new node
-    const vb = svg.getAttribute('viewBox').split(' ');
-    const W = parseFloat(vb[2]);
-    const H = parseFloat(vb[3]);
-    const x = 20, y = H + 20;
     const ns = 'http://www.w3.org/2000/svg';
-    const g = document.createElementNS(ns, 'g');
-    g.setAttribute('class', color);
-    const rect = document.createElementNS(ns, 'rect');
-    rect.setAttribute('x', x);
-    rect.setAttribute('y', y);
-    rect.setAttribute('rx', '7');
-    rect.setAttribute('stroke-width', '0.5');
-    g.appendChild(rect);
+    if (mode === '__edit__' && _selectedNode) {
+      _selectedNode.className.baseVal = color;
+      let text1 = _selectedNode.querySelector('text:nth-of-type(1)');
+      if (!text1) {
+        text1 = document.createElementNS(ns, 'text');
+        _selectedNode.appendChild(text1);
+      }
+      text1.textContent = line1;
 
-    const t1 = document.createElementNS(ns, 'text');
-    t1.textContent = line1;
-    g.appendChild(t1);
-    if (line2) {
-      const t2 = document.createElementNS(ns, 'text');
-      t2.textContent = line2;
-      g.appendChild(t2);
+      let text2 = _selectedNode.querySelector('text:nth-of-type(2)');
+      if (line2) {
+        if (!text2) {
+          text2 = document.createElementNS(ns, 'text');
+          _selectedNode.appendChild(text2);
+        }
+        text2.textContent = line2;
+      } else if (text2) {
+        text2.remove();
+      }
+      layoutFlowNode(_selectedNode);
+    } else if (mode === '__new__') {
+      // Find viewBox to position new node
+      const vb = (svg.getAttribute('viewBox') || '0 0 460 90').split(' ');
+      const W = parseFloat(vb[2]) || 460;
+      const H = parseFloat(vb[3]) || 90;
+      const x = 20, y = H + 20;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('rx', '7');
+      rect.setAttribute('stroke-width', '0.5');
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('class', color);
+      g.appendChild(rect);
+
+      const t1 = document.createElementNS(ns, 'text');
+      t1.textContent = line1;
+      g.appendChild(t1);
+      if (line2) {
+        const t2 = document.createElementNS(ns, 'text');
+        t2.textContent = line2;
+        g.appendChild(t2);
+      }
+      layoutFlowNode(g);
+      svg.setAttribute('viewBox', `0 0 ${Math.max(W, x + parseFloat(rect.getAttribute('width') || '0') + 20)} ${y + parseFloat(rect.getAttribute('height') || '0') + 20}`);
+      svg.appendChild(g);
+      g.style.cursor = 'pointer';
+      g.onclick = function() {
+        svg.querySelectorAll('g[class^="fc-"]').forEach(n => n.style.outline = '');
+        g.style.outline = '2.5px solid var(--dmk-blue)';
+        _selectedNode = g;
+      };
+      const wrap = svg.closest('.flow-wrap');
+      enableFlowNodeSelect(wrap);
+      makeSvgNodesDraggable(wrap);
+      try { updateFlowEdges(wrap); } catch(e) { console.warn('confirmNodeEdit updateFlowEdges failed', e); }
     }
-
-    layoutFlowNode(g);
-    svg.setAttribute('viewBox', `0 0 ${Math.max(W, x + parseFloat(rect.getAttribute('width')) + 20)} ${y + parseFloat(rect.getAttribute('height')) + 20}`);
-    svg.appendChild(g);
-    g.style.cursor = 'pointer';
-    g.onclick = function() {
-      svg.querySelectorAll('g[class^="fc-"]').forEach(n => n.style.outline = '');
-      g.style.outline = '2.5px solid var(--dmk-blue)';
-      _selectedNode = g;
-    };
-    enableFlowNodeSelect(svg.closest('.flow-wrap'));
-    makeSvgNodesDraggable(svg.closest('.flow-wrap'));
-    try { updateFlowEdges(svg.closest('.flow-wrap')); } catch(e) {}
+    closeModal('modal-add-node');
+    showToast('✓ Node diperbarui');
+    // Persist immediately after node edit or add
+    const wrap = svg.closest('.flow-wrap');
+    if (wrap) {
+      const sec = wrap.closest('.section');
+      if (sec) {
+        const secId = sec.id.replace('sec-','');
+        const svgContent = svg.innerHTML;
+        _customFlows[secId] = svgContent;
+      }
+      saveAll();
+    }
+  } catch (e) {
+    console.error('confirmNodeEdit failed', e);
+    showToast('⚠️ Gagal menyimpan node, lihat console');
   }
-  closeModal('modal-add-node');
-  showToast('✓ Node diperbarui');
 }
 
 // ═══════════════════════════════════════════════
@@ -4568,6 +4595,19 @@ function addMenuToCategory(catKey, menu) {
       newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${menuName}`;
       navSec.insertBefore(newBtn, addBtn);
     }
+  } else {
+    // fallback: insert directly into sidebar before edit button
+    const nav = document.querySelector('.sidebar');
+    const editBtn = nav ? nav.querySelector('.nav-edit-btn') : null;
+    if (nav && !document.getElementById('nav-' + menuId)) {
+      const newBtn = document.createElement('button');
+      newBtn.className = 'nav-item';
+      newBtn.id = 'nav-' + menuId;
+      newBtn.onclick = () => go(menuId);
+      newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${menuName}`;
+      if (editBtn) nav.insertBefore(newBtn, editBtn);
+      else nav.appendChild(newBtn);
+    }
   }
   // create basic section if missing
   if (!document.getElementById('sec-' + menuId)) {
@@ -4580,6 +4620,37 @@ function addMenuToCategory(catKey, menu) {
   }
 }
 
+function prettifyMenuName(raw) {
+  if (!raw) return '';
+  let s = String(raw);
+  // remove numeric suffixes like _123456789
+  s = s.replace(/[_-]?[0-9]{6,}$/,'');
+  // replace underscores/hyphens with spaces
+  s = s.replace(/[_-]+/g,' ');
+  // remove common redundant tokens
+  s = s.replace(/\bmenu\b/gi,'').trim();
+  // collapse multiple spaces
+  s = s.replace(/\s+/g,' ');
+  // title case
+  s = s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return s || raw;
+}
+
+function inferCategoryFromMenuId(menuId) {
+  if (!menuId) return { key: '', name: '' };
+  const known = {
+    finance: 'Finance', scm: 'Supply Chain', production: 'Production', masterdata: 'Master Data', item: 'Item'
+  };
+  const parts = menuId.split('_');
+  for (let i=0;i<Math.min(3,parts.length);i++){
+    const p = parts[i].toLowerCase();
+    if (known[p]) return { key: p, name: known[p] };
+  }
+  // fallback: try to find any known token inside id
+  for (const k in known) if (menuId.toLowerCase().includes(k)) return { key: k, name: known[k] };
+  return { key: '', name: '' };
+}
+
 function restoreCustomMenus(saved = null) {
   if (!saved) saved = getSaved();
   for (const key in saved) {
@@ -4590,7 +4661,19 @@ function restoreCustomMenus(saved = null) {
     const color = raw.color || 'gray';
     const menuId = raw.menuId || raw.menuKey || key.replace('__menu_','');
     // Resolve menu name from multiple possible properties or fallbacks
-    const menuName = raw.menuName || raw.name || raw.title || (document.querySelector('#sec-' + menuId + ' .page-header h1')?.textContent) || menuId;
+    let menuName = raw.menuName || raw.name || raw.title || (document.querySelector('#sec-' + menuId + ' .page-header h1')?.textContent) || menuId;
+    // if catKey missing, try infer from menuId
+    let finalCatKey = catKey;
+    let finalCatName = catName;
+    if (!finalCatKey) {
+      const inferred = inferCategoryFromMenuId(menuId);
+      if (inferred.key) { finalCatKey = inferred.key; finalCatName = finalCatName || inferred.name; }
+    }
+    // prettify name if it appears to be an auto id
+    if (!raw.menuName || menuName === menuId || /menu_\d{6,}$/.test(menuName) || menuName.toLowerCase().includes(menuId.toLowerCase())) {
+      const pretty = prettifyMenuName(menuId);
+      if (pretty) menuName = pretty;
+    }
     const menuDesc = raw.menuDesc || raw.desc || '';
     const menuImage = raw.menuImage || raw.menuImg || '';
     // If saved entry lacked useful fields, persist the inferred values back
@@ -4612,8 +4695,8 @@ function restoreCustomMenus(saved = null) {
     const tagClass = { blue:'tag-finance', green:'tag-scm', amber:'tag-prod', gray:'tag-master' }[color] || 'tag-master';
     const fcClass  = { blue:'fc-blue', green:'fc-green', amber:'fc-amber', gray:'fc-gray' }[color] || 'fc-blue';
 
-    // Restore nav button
-    const navSec = document.getElementById('nav-sec-' + catKey);
+    // Restore nav button (use inferred category if needed)
+    const navSec = document.getElementById('nav-sec-' + finalCatKey);
     if (navSec) {
       const addBtn = navSec.querySelector('.nav-add-menu-btn');
       if (!document.getElementById('nav-' + menuId)) {
@@ -4634,7 +4717,7 @@ function restoreCustomMenus(saved = null) {
     secDiv.innerHTML = `
       <div class="page-header">
         <div class="breadcrumb" style="display:flex;align-items:center;gap:5px;">
-          <span style="color:var(--text3)">${catName} </span><span>›</span><span>${menuName}</span>
+          <span style="color:var(--text3)">${finalCatName} </span><span>›</span><span>${menuName}</span>
         </div>
         <h1>${menuName}</h1><p>${menuDesc || ''}</p>
       </div>
@@ -5395,15 +5478,21 @@ function saveAll() {
     if (!saved[key]) saved[key] = { menuId: secId };
     saved[key].menuImage = _pendingHeaderImgs[secId];
   }
-  // Persist any custom SVG flows
+  // Persist any custom SVG flows from the DOM as well as cached flows
   try {
-    for (const secId in _customFlows) {
-      if (!_customFlows.hasOwnProperty(secId)) continue;
-      const key = '__flow_' + secId;
-      saved[key] = _customFlows[secId];
-    }
-  } catch(e) { console.warn('Error serializing custom flows', e); }
-  saveToDB(saved);
+    document.querySelectorAll('.flow-wrap').forEach(wrap => {
+      const sec = wrap.closest('.section');
+      if (!sec) return;
+      const secId = sec.id.replace('sec-','');
+      const svg = wrap.querySelector('svg.flow');
+      if (!svg) return;
+      saved['__flow_' + secId] = svg.innerHTML;
+    });
+  } catch(e) {
+    console.warn('Error serializing custom flows from DOM', e);
+  }
+  try { saveToDB(saved); }
+  catch(e) { console.error('saveAll failed', e); }
 }
 
 function applyAllSaved(saved) {
@@ -5502,6 +5591,101 @@ function saveToDB(data) {
       } catch(e) { console.warn('Supabase save failed', e); }
     }, 800);
   }
+}
+
+// === Supabase menus table DDL (run this in Supabase SQL editor) ===
+/*
+-- Run in Supabase SQL editor to create a dedicated menus table
+create table if not exists public.menus (
+  id text primary key,
+  data jsonb,
+  cat_key text,
+  cat_name text,
+  color text,
+  menu_name text,
+  menu_desc text,
+  menu_image text,
+  created_at timestamptz default now(),
+  updated_at timestamptz
+);
+
+-- Optional: grant select/insert/update to anon (if you want client-side writes)
+-- grant insert, update, select on public.menus to anon;
+*/
+
+const MENUS_TABLE = 'menus';
+
+// Migrate local `d365_edits` __menu_ entries to Supabase `menus` table
+async function migrateLocalMenusToSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.warn('Supabase credentials missing; cannot migrate');
+    return { ok: false, error: 'missing-credentials' };
+  }
+  const saved = getSaved();
+  const rows = [];
+  for (const k in saved) {
+    if (!k.startsWith('__menu_')) continue;
+    const raw = saved[k] || {};
+    const menuId = raw.menuId || raw.menuKey || k.replace('__menu_','') || ('menu_' + Date.now());
+    const payload = {
+      id: String(menuId),
+      data: raw,
+      cat_key: raw.catKey || raw.category || raw.cat || null,
+      cat_name: raw.catName || raw.categoryName || null,
+      color: raw.color || null,
+      menu_name: raw.menuName || raw.name || raw.title || null,
+      menu_desc: raw.menuDesc || raw.desc || null,
+      menu_image: raw.menuImage || raw.menuImg || null,
+      updated_at: new Date().toISOString()
+    };
+    rows.push(payload);
+  }
+
+  if (!rows.length) {
+    console.log('migrateLocalMenusToSupabase: nothing to migrate');
+    return { ok: true, migrated: 0 };
+  }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${MENUS_TABLE}?on_conflict=id`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(rows)
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('migrateLocalMenusToSupabase failed', res.status, text);
+      return { ok: false, status: res.status, error: text };
+    }
+
+    console.log('migrateLocalMenusToSupabase: success, rows sent:', rows.length);
+    return { ok: true, migrated: rows.length };
+  } catch (e) {
+    console.error('migrateLocalMenusToSupabase error', e);
+    return { ok: false, error: e.message || e };
+  }
+}
+
+// Safe helper to migrate and then mark local entries as migrated (optional)
+async function migrateAndMarkLocalMenus() {
+  const result = await migrateLocalMenusToSupabase();
+  if (result.ok && result.migrated > 0) {
+    const saved = getSaved();
+    for (const k in saved) {
+      if (!k.startsWith('__menu_')) continue;
+      const raw = saved[k] || {};
+      raw._migrated_to_db = true;
+      saved[k] = raw;
+    }
+    try { saveToDB(saved); } catch(e) { console.warn('Failed to mark migrated locally', e); }
+  }
+  return result;
 }
 
 function resetAll() {
