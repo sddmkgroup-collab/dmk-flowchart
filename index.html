@@ -1514,6 +1514,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="step-desc" id="dsc-pj1" data-orig="Ketik &lt;strong&gt;Payment Journals&lt;/strong&gt; pada search bar MBC. Pilih menu yang muncul.">Ketik <strong>Payment Journals</strong> pada search bar MBC. Pilih menu yang muncul.</div>
           </div>
         </div>
+        <div class="step-img" data-step-img="pj1"><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Screenshot Buka Payment Journal" data-caption="Buka Payment Journal" id="img-pj1" loading="lazy" data-orig-src=""/><div class="img-caption" data-cap="pj1">Buka Payment Journal</div></div>
       </div>
       <div class="step-row" id="sr-pj2">
         <div class="step-top">
@@ -1523,6 +1524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="step-desc" id="dsc-pj2" data-orig="Pilih &lt;strong&gt;Batch Name&lt;/strong&gt; yang sesuai (misalnya: DEFAULT, VENDOR, dll) sesuai kebijakan perusahaan.">Pilih <strong>Batch Name</strong> yang sesuai (misalnya: DEFAULT, VENDOR, dll) sesuai kebijakan perusahaan.</div>
           </div>
         </div>
+        <div class="step-img" data-step-img="pj2"><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Screenshot Pilih Batch Name" data-caption="Pilih Batch Name" id="img-pj2" loading="lazy" data-orig-src=""/><div class="img-caption" data-cap="pj2">Pilih Batch Name</div></div>
       </div>
       <div class="step-row" id="sr-pj3">
         <div class="step-top">
@@ -1532,6 +1534,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="step-desc" id="dsc-pj3" data-orig="Isi kolom berikut pada baris baru: &lt;strong&gt;Posting Date&lt;/strong&gt;, &lt;strong&gt;Document Type&lt;/strong&gt; (Payment/Refund), &lt;strong&gt;Account Type&lt;/strong&gt; (Vendor/Customer), &lt;strong&gt;Account No.&lt;/strong&gt;, &lt;strong&gt;Applies-to Doc. No.&lt;/strong&gt;, dan &lt;strong&gt;Amount&lt;/strong&gt;.">Isi kolom berikut pada baris baru: <strong>Posting Date</strong>, <strong>Document Type</strong> (Payment/Refund), <strong>Account Type</strong> (Vendor/Customer), <strong>Account No.</strong>, <strong>Applies-to Doc. No.</strong>, dan <strong>Amount</strong>.</div>
           </div>
         </div>
+        <div class="step-img" data-step-img="pj3"><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Screenshot Isi Baris Journal" data-caption="Isi Baris Journal" id="img-pj3" loading="lazy" data-orig-src=""/><div class="img-caption" data-cap="pj3">Isi Baris Journal</div></div>
       </div>
       <div class="step-row" id="sr-pj4">
         <div class="step-top">
@@ -1541,6 +1544,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="step-desc" id="dsc-pj4" data-orig="Isi &lt;strong&gt;Bal. Account Type&lt;/strong&gt; = Bank Account dan &lt;strong&gt;Bal. Account No.&lt;/strong&gt; = rekening bank yang digunakan untuk pembayaran.">Isi <strong>Bal. Account Type</strong> = Bank Account dan <strong>Bal. Account No.</strong> = rekening bank yang digunakan untuk pembayaran.</div>
           </div>
         </div>
+        <div class="step-img" data-step-img="pj4"><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Screenshot Pilih Bank Account" data-caption="Pilih Bank Account (Bal. Account)" id="img-pj4" loading="lazy" data-orig-src=""/><div class="img-caption" data-cap="pj4">Pilih Bank Account (Bal. Account)</div></div>
       </div>
       <div class="step-row" id="sr-pj5">
         <div class="step-top">
@@ -1550,6 +1554,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="step-desc" id="dsc-pj5" data-orig="Setelah semua baris terisi dan diverifikasi, klik &lt;strong&gt;Post&lt;/strong&gt; (atau tekan &lt;strong&gt;Ctrl+F9&lt;/strong&gt;) untuk memposting payment journal.">Setelah semua baris terisi dan diverifikasi, klik <strong>Post</strong> (atau tekan <strong>Ctrl+F9</strong>) untuk memposting payment journal.</div>
           </div>
         </div>
+        <div class="step-img" data-step-img="pj5"><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Screenshot Post Journal" data-caption="Post Journal" id="img-pj5" loading="lazy" data-orig-src=""/><div class="img-caption" data-cap="pj5">Post Journal</div></div>
       </div>
       <div class="note-row"><span>ℹ️</span><span>Pastikan <strong>Applies-to Doc. No.</strong> terisi agar pembayaran ter-apply ke invoice yang tepat.</span></div>
     </div>
@@ -1629,6 +1634,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 <option value="depreciation">Penyusutan Aset</option>
 <option value="fin-report">Financial Report</option>
 <option value="pnl">Profit & Loss</option>
+<option value="pay-journal">Payment Journal</option>
 <option value="vendor">Vendor</option>
 <option value="po">Purchase Order</option>
 <option value="pr">Purchase Receipt</option>
@@ -2179,7 +2185,123 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
             </div>
           </div>
-        </div></div><div class="editor-module" id="em-vendor" style="display:none"><div class="editor-step">
+        </div></div><div class="editor-module" id="em-pay-journal" style="display:none"><div class="editor-step">
+          <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">Buka Payment Journal</span></div>
+          <div class="editor-step-body">
+            <div class="editor-field">
+              <label>Judul Langkah</label>
+              <input class="editor-input" id="einput-lbl-pj1" value="Buka Payment Journal" placeholder="Judul langkah..."/>
+            </div>
+            <div class="editor-field">
+              <label>Deskripsi / Keterangan</label>
+              <textarea class="editor-input" id="einput-dsc-pj1">Ketik <strong>Payment Journals</strong> pada search bar MBC. Pilih menu yang muncul.</textarea>
+            </div>
+            <div class="editor-field">
+              <label>Foto Screenshot</label>
+              <div class="editor-img-row">
+                <img class="editor-img-preview" id="eprev-pj1" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="preview"/>
+                <div class="editor-img-actions">
+                  <label class="upload-btn">📂 Pilih Foto Baru<input type="file" accept="image/*" onchange="handleImgUpload(this,'pj1')"/></label>
+                  <div class="upload-hint">Format: JPG, PNG, WebP<br>Foto akan menggantikan screenshot saat ini</div>
+                  <button onclick="resetImg('pj1')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><div class="editor-step">
+          <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">Pilih Batch Name</span></div>
+          <div class="editor-step-body">
+            <div class="editor-field">
+              <label>Judul Langkah</label>
+              <input class="editor-input" id="einput-lbl-pj2" value="Pilih Batch Name" placeholder="Judul langkah..."/>
+            </div>
+            <div class="editor-field">
+              <label>Deskripsi / Keterangan</label>
+              <textarea class="editor-input" id="einput-dsc-pj2">Pilih <strong>Batch Name</strong> yang sesuai (misalnya: DEFAULT, VENDOR, dll).</textarea>
+            </div>
+            <div class="editor-field">
+              <label>Foto Screenshot</label>
+              <div class="editor-img-row">
+                <img class="editor-img-preview" id="eprev-pj2" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="preview"/>
+                <div class="editor-img-actions">
+                  <label class="upload-btn">📂 Pilih Foto Baru<input type="file" accept="image/*" onchange="handleImgUpload(this,'pj2')"/></label>
+                  <div class="upload-hint">Format: JPG, PNG, WebP<br>Foto akan menggantikan screenshot saat ini</div>
+                  <button onclick="resetImg('pj2')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><div class="editor-step">
+          <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">Isi Baris Journal</span></div>
+          <div class="editor-step-body">
+            <div class="editor-field">
+              <label>Judul Langkah</label>
+              <input class="editor-input" id="einput-lbl-pj3" value="Isi Baris Journal" placeholder="Judul langkah..."/>
+            </div>
+            <div class="editor-field">
+              <label>Deskripsi / Keterangan</label>
+              <textarea class="editor-input" id="einput-dsc-pj3">Isi Posting Date, Document Type, Account Type, Account No., Applies-to Doc. No., dan Amount.</textarea>
+            </div>
+            <div class="editor-field">
+              <label>Foto Screenshot</label>
+              <div class="editor-img-row">
+                <img class="editor-img-preview" id="eprev-pj3" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="preview"/>
+                <div class="editor-img-actions">
+                  <label class="upload-btn">📂 Pilih Foto Baru<input type="file" accept="image/*" onchange="handleImgUpload(this,'pj3')"/></label>
+                  <div class="upload-hint">Format: JPG, PNG, WebP<br>Foto akan menggantikan screenshot saat ini</div>
+                  <button onclick="resetImg('pj3')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><div class="editor-step">
+          <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">Pilih Bank Account (Bal. Account)</span></div>
+          <div class="editor-step-body">
+            <div class="editor-field">
+              <label>Judul Langkah</label>
+              <input class="editor-input" id="einput-lbl-pj4" value="Pilih Bank Account (Bal. Account)" placeholder="Judul langkah..."/>
+            </div>
+            <div class="editor-field">
+              <label>Deskripsi / Keterangan</label>
+              <textarea class="editor-input" id="einput-dsc-pj4">Isi Bal. Account Type = Bank Account dan Bal. Account No. = rekening bank yang digunakan untuk pembayaran.</textarea>
+            </div>
+            <div class="editor-field">
+              <label>Foto Screenshot</label>
+              <div class="editor-img-row">
+                <img class="editor-img-preview" id="eprev-pj4" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="preview"/>
+                <div class="editor-img-actions">
+                  <label class="upload-btn">📂 Pilih Foto Baru<input type="file" accept="image/*" onchange="handleImgUpload(this,'pj4')"/></label>
+                  <div class="upload-hint">Format: JPG, PNG, WebP<br>Foto akan menggantikan screenshot saat ini</div>
+                  <button onclick="resetImg('pj4')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><div class="editor-step">
+          <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">Post Journal</span></div>
+          <div class="editor-step-body">
+            <div class="editor-field">
+              <label>Judul Langkah</label>
+              <input class="editor-input" id="einput-lbl-pj5" value="Post Journal" placeholder="Judul langkah..."/>
+            </div>
+            <div class="editor-field">
+              <label>Deskripsi / Keterangan</label>
+              <textarea class="editor-input" id="einput-dsc-pj5">Setelah semua baris terisi dan diverifikasi, klik Post (atau tekan Ctrl+F9) untuk memposting payment journal.</textarea>
+            </div>
+            <div class="editor-field">
+              <label>Foto Screenshot</label>
+              <div class="editor-img-row">
+                <img class="editor-img-preview" id="eprev-pj5" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="preview"/>
+                <div class="editor-img-actions">
+                  <label class="upload-btn">📂 Pilih Foto Baru<input type="file" accept="image/*" onchange="handleImgUpload(this,'pj5')"/></label>
+                  <div class="upload-hint">Format: JPG, PNG, WebP<br>Foto akan menggantikan screenshot saat ini</div>
+                  <button onclick="resetImg('pj5')" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><div class="editor-module" id="em-vendor" style="display:none"><div class="editor-step">
           <div class="editor-step-head">Langkah: <span style="font-weight:400;color:var(--text2)">Membuat Vendor baru</span></div>
           <div class="editor-step-body">
             <div class="editor-field">
