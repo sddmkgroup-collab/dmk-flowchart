@@ -4009,6 +4009,7 @@ let _editingFlowWrap = null;  // current flow-wrap being edited
 let _selectedNode = null;     // selected SVG <g> node
 let _pendingImgs = {};        // {sid: dataURL}
 let _pendingHeaderImgs = {};  // {secId: dataURL}
+let _pendingAddStepImg = null; // dataURL for the step currently being created in modal-add-step
 let _customSteps = {};        // {secId: [{sid,lbl,dsc,img},...]}
 let _customCats = [];         // [{id,name,color,guides:[]}]
 let _customFlows = {};        // {secId: svgInnerHTML}
@@ -4399,7 +4400,43 @@ function openAddStep(secId) {
   document.getElementById('add-step-secid').value = secId;
   document.getElementById('add-step-lbl').value = '';
   document.getElementById('add-step-dsc').value = '';
+  resetAddStepImg();
   openModal('modal-add-step');
+}
+
+function handleAddStepImg(input) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    _pendingAddStepImg = e.target.result;
+    const prev = document.getElementById('add-step-img-prev');
+    if (prev) { prev.src = _pendingAddStepImg; prev.classList.remove('empty'); }
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function resetAddStepImg() {
+  _pendingAddStepImg = null;
+  const prev = document.getElementById('add-step-img-prev');
+  if (prev) { prev.src = ''; prev.classList.add('empty'); }
+  const fileInput = document.querySelector('#modal-add-step input[type="file"]');
+  if (fileInput) fileInput.value = '';
+}
+
+function insertStepIntoEditorPanel(secId, sid) {
+  const emModule = document.getElementById('em-' + secId);
+  if (!emModule || typeof buildEditorStepHtml !== 'function') return;
+  const addRow = emModule.querySelector('.add-step-row');
+  const temp = document.createElement('div');
+  temp.innerHTML = buildEditorStepHtml(sid);
+  const newStepEl = temp.firstElementChild;
+  if (!newStepEl) return;
+  if (addRow && addRow.parentElement === emModule) {
+    emModule.insertBefore(newStepEl, addRow);
+  } else {
+    emModule.appendChild(newStepEl);
+  }
+  ensureEditorAddStepButton(emModule, secId);
 }
 
 function confirmAddStep() {
@@ -4410,6 +4447,7 @@ function confirmAddStep() {
   
   const sid = secId + '_' + Date.now();
   const num = (document.querySelectorAll('#sec-' + secId + ' .step-row').length + 1);
+  const imgSrc = _pendingAddStepImg || '';
   
   // Add to page view
   const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
@@ -4426,7 +4464,7 @@ function confirmAddStep() {
         </div>
       </div>
       <div class="step-img" data-step-img="${sid}">
-        <img id="img-${sid}" src="" alt="" loading="lazy" />
+        <img id="img-${sid}" src="${imgSrc}" alt="" loading="lazy" />
         <div class="img-caption" data-cap="${sid}"></div>
       </div>
       <div class="step-actions visible">
@@ -4441,7 +4479,10 @@ function confirmAddStep() {
   // Save
   const saved = getSaved();
   saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
+  if (imgSrc) saved[sid].img = imgSrc;
   saveToDB(saved);
+  insertStepIntoEditorPanel(secId, sid);
+  resetAddStepImg();
   if (typeof initEditorSelect === 'function') initEditorSelect();
   closeModal('modal-add-step');
   showToast('✓ Langkah baru ditambahkan');
@@ -5058,10 +5099,22 @@ function applyHeaderToPage(secId, title, desc, imgSrc) {
   }
 }
 
+function ensureEditorAddStepButton(moduleEl, secId) {
+  if (!moduleEl || moduleEl.querySelector('.add-step-row')) return;
+  const row = document.createElement('div');
+  row.className = 'add-step-row visible';
+  row.style.marginTop = '12px';
+  row.innerHTML = `<button class="add-step-btn" onclick="openAddStep('${secId}')">＋ Tambah Langkah</button>`;
+  moduleEl.appendChild(row);
+}
+
 function createEditorModulePanel(secId) {
   const existing = document.getElementById('em-' + secId);
   const isBuiltIn = Object.prototype.hasOwnProperty.call(STEP_MAP, secId);
-  if (existing && isBuiltIn) return;
+  if (existing && isBuiltIn) {
+    ensureEditorAddStepButton(existing, secId);
+    return;
+  }
 
   const stepIds = getStepIdsForSection(secId);
   const module = existing || document.createElement('div');
@@ -5141,7 +5194,8 @@ function createEditorModulePanel(secId) {
         </div>
       </div>`;
 
-    module.innerHTML = headerHtml + stepIds.map(sid => buildEditorStepHtml(sid)).join('');
+    module.innerHTML = headerHtml + stepIds.map(sid => buildEditorStepHtml(sid)).join('')
+      + `<div class="add-step-row visible" style="margin-top:12px;"><button class="add-step-btn" onclick="openAddStep('${secId}')">＋ Tambah Langkah</button></div>`;
   }
   const editorBody = document.querySelector('.editor-body');
   if (editorBody && !existing) editorBody.appendChild(module);
@@ -5718,6 +5772,17 @@ window.addEventListener('DOMContentLoaded', async () => {
     <div class="modal-field">
       <label>Deskripsi / Keterangan</label>
       <textarea class="modal-input" id="add-step-dsc" rows="3" placeholder="Keterangan..."></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Foto Screenshot</label>
+      <div class="editor-img-row">
+        <img class="editor-img-preview empty" id="add-step-img-prev" src="" alt="preview"/>
+        <div class="editor-img-actions">
+          <label class="upload-btn">📂 Pilih Foto<input type="file" accept="image/*" onchange="handleAddStepImg(this)"/></label>
+          <div class="upload-hint">Format: JPG, PNG, WebP</div>
+          <button type="button" onclick="resetAddStepImg()" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
+        </div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal('modal-add-step')">Batal</button>
