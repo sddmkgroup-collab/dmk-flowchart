@@ -225,6 +225,20 @@ svg.flow{width:100%;display:block;}
   box-shadow:var(--shadow-sm);
 }
 .img-caption{font-size:10.5px;color:var(--text3);margin-top:6px;font-style:italic;}
+.step-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+.step-photo-item{min-width:0;}
+.step-photo-item img{max-width:100%;}
+.extra-photo-widget{width:100%;}
+.extra-photo-thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+.extra-photo-thumb{position:relative;width:92px;height:70px;border-radius:var(--r-md);overflow:hidden;border:1.5px solid var(--border2);flex-shrink:0;}
+.extra-photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.extra-photo-remove{
+  position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;
+  border:none;background:rgba(139,26,26,.85);color:#fff;font-size:10px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+}
+.extra-photo-remove:hover{background:var(--red-tx);}
+.extra-photo-empty{font-size:11px;color:var(--text3);font-style:italic;}
 .note-row{
   padding:11px 18px;background:var(--amber-bg);
   border-top:1.5px solid var(--amber-bd);
@@ -4010,6 +4024,8 @@ let _selectedNode = null;     // selected SVG <g> node
 let _pendingImgs = {};        // {sid: dataURL}
 let _pendingHeaderImgs = {};  // {secId: dataURL}
 let _pendingAddStepImg = null; // dataURL for the step currently being created in modal-add-step
+const MAX_EXTRA_PHOTOS = 3;   // + 1 primary photo = max 4 photos per step
+let _extraPhotoState = {};    // {prefix: [dataURLorURL, ...]} — prefixes: 'eextra-<sid>', 'mextra', 'aextra'
 let _customSteps = {};        // {secId: [{sid,lbl,dsc,img},...]}
 let _customCats = [];         // [{id,name,color,guides:[]}]
 let _customFlows = {};        // {secId: svgInnerHTML}
@@ -4323,6 +4339,96 @@ function confirmNodeEdit() {
 // ═══════════════════════════════════════════════
 // STEP EDIT / ADD / DELETE
 // ═══════════════════════════════════════════════
+
+// ═══ MULTI-PHOTO (EXTRA IMAGES) HELPERS — up to 3 extra photos + 1 primary = max 4/step ═══
+function extraPhotoThumbsHtml(prefix) {
+  const arr = _extraPhotoState[prefix] || [];
+  return arr.map((src, i) => `
+    <div class="extra-photo-thumb">
+      <img src="${src}" alt="Foto tambahan ${i + 2}">
+      <button type="button" class="extra-photo-remove" onclick="removeExtraPhoto('${prefix}',${i})" title="Hapus foto ini">✕</button>
+    </div>`).join('') || '<div class="extra-photo-empty">Belum ada foto tambahan</div>';
+}
+
+function extraPhotoWidgetHtml(prefix, images) {
+  _extraPhotoState[prefix] = (images || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
+  return `<div class="extra-photo-widget">
+    <div class="extra-photo-thumbs" id="${prefix}-thumbs">${extraPhotoThumbsHtml(prefix)}</div>
+    <label class="upload-btn">📎 Tambah Foto Lain<input type="file" accept="image/*" multiple onchange="handleExtraPhotoUpload(this,'${prefix}')"/></label>
+    <div class="upload-hint">Maks. ${MAX_EXTRA_PHOTOS} foto tambahan (total maks. 4 foto per langkah)</div>
+  </div>`;
+}
+
+function renderExtraPhotoThumbs(prefix) {
+  const el = document.getElementById(prefix + '-thumbs');
+  if (el) el.innerHTML = extraPhotoThumbsHtml(prefix);
+}
+
+function handleExtraPhotoUpload(input, prefix) {
+  if (!input.files || !input.files.length) return;
+  const arr = _extraPhotoState[prefix] || (_extraPhotoState[prefix] = []);
+  const room = MAX_EXTRA_PHOTOS - arr.length;
+  if (room <= 0) { showToast('⚠️ Maksimal ' + MAX_EXTRA_PHOTOS + ' foto tambahan (4 foto per langkah)'); input.value = ''; return; }
+  const files = Array.from(input.files).slice(0, room);
+  if (input.files.length > room) showToast('⚠️ Hanya ' + room + ' foto yang ditambahkan (maks. 4 foto per langkah)');
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      arr.push(e.target.result);
+      renderExtraPhotoThumbs(prefix);
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+}
+
+function removeExtraPhoto(prefix, idx) {
+  const arr = _extraPhotoState[prefix] || [];
+  arr.splice(idx, 1);
+  renderExtraPhotoThumbs(prefix);
+}
+
+// ═══ STEP PHOTO GALLERY (page display, supports up to 4 photos per step) ═══
+function ensureStepGalleryInit(container) {
+  if (!container || container.dataset.galleryInit === '1') return;
+  const img = container.querySelector('img');
+  if (!img) { container.dataset.galleryInit = '1'; return; }
+  const cap = container.querySelector('.img-caption');
+  const primaryItem = document.createElement('div');
+  primaryItem.className = 'step-photo-item';
+  primaryItem.appendChild(img);
+  if (cap) primaryItem.appendChild(cap);
+  const grid = document.createElement('div');
+  grid.className = 'step-photo-grid';
+  grid.appendChild(primaryItem);
+  container.innerHTML = '';
+  container.appendChild(grid);
+  container.dataset.galleryInit = '1';
+}
+
+function initStepPhotoGalleries() {
+  document.querySelectorAll('.step-img[data-step-img]').forEach(ensureStepGalleryInit);
+}
+
+function renderExtraStepPhotos(sid) {
+  const container = document.querySelector('.step-img[data-step-img="' + sid + '"]');
+  if (!container) return;
+  ensureStepGalleryInit(container);
+  const grid = container.querySelector('.step-photo-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.step-photo-item[data-extra="1"]').forEach(n => n.remove());
+  const saved = getSaved();
+  const extras = (saved[sid] && saved[sid].imgs2) || [];
+  extras.forEach((src, i) => {
+    if (!src) return;
+    const item = document.createElement('div');
+    item.className = 'step-photo-item';
+    item.setAttribute('data-extra', '1');
+    item.innerHTML = `<img src="${src}" alt="Foto tambahan ${i + 2}" loading="lazy">`;
+    grid.appendChild(item);
+  });
+}
+
 function openStepEdit(sid) {
   const lbl = document.getElementById('lbl-' + sid);
   const dsc = document.getElementById('dsc-' + sid);
@@ -4333,6 +4439,11 @@ function openStepEdit(sid) {
   const prev = document.getElementById('modal-prev');
   if (img && img.src) { prev.src = img.src; prev.classList.remove('empty'); }
   else { prev.src = ''; prev.classList.add('empty'); }
+  const saved = getSaved();
+  _extraPhotoState['mextra'] = ((saved[sid] && saved[sid].imgs2) || []).slice(0, MAX_EXTRA_PHOTOS);
+  renderExtraPhotoThumbs('mextra');
+  const mextraInput = document.querySelector('#modal-step-edit input[type="file"][onchange*="mextra"]');
+  if (mextraInput) mextraInput.value = '';
   openModal('modal-step-edit');
 }
 
@@ -4363,12 +4474,16 @@ function saveModalStep() {
     if (imgEl) imgEl.src = window._modalImgData;
     window._modalImgData = null;
   }
+  // Extra photos (stage into the editor-page state key so saveAll() persists it)
+  _extraPhotoState['eextra-' + sid] = (_extraPhotoState['mextra'] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
   // Update editor inputs if they exist
   const einLbl = document.getElementById('einput-lbl-' + sid);
   const einDsc = document.getElementById('einput-dsc-' + sid);
   if (einLbl) einLbl.value = lbl;
   if (einDsc) einDsc.value = dsc;
+  renderExtraPhotoThumbs('eextra-' + sid);
   saveAll();
+  renderExtraStepPhotos(sid);
   closeModal('modal-step-edit');
   showToast('✓ Langkah diperbarui');
 }
@@ -4401,6 +4516,10 @@ function openAddStep(secId) {
   document.getElementById('add-step-lbl').value = '';
   document.getElementById('add-step-dsc').value = '';
   resetAddStepImg();
+  _extraPhotoState['aextra'] = [];
+  renderExtraPhotoThumbs('aextra');
+  const aextraInput = document.querySelector('#modal-add-step input[type="file"][onchange*="aextra"]');
+  if (aextraInput) aextraInput.value = '';
   openModal('modal-add-step');
 }
 
@@ -4419,7 +4538,7 @@ function resetAddStepImg() {
   _pendingAddStepImg = null;
   const prev = document.getElementById('add-step-img-prev');
   if (prev) { prev.src = ''; prev.classList.add('empty'); }
-  const fileInput = document.querySelector('#modal-add-step input[type="file"]');
+  const fileInput = document.querySelector('#modal-add-step input[type="file"][onchange*="handleAddStepImg"]');
   if (fileInput) fileInput.value = '';
 }
 
@@ -4448,6 +4567,7 @@ function confirmAddStep() {
   const sid = secId + '_' + Date.now();
   const num = (document.querySelectorAll('#sec-' + secId + ' .step-row').length + 1);
   const imgSrc = _pendingAddStepImg || '';
+  const extraImgs = (_extraPhotoState['aextra'] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
   
   // Add to page view
   const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
@@ -4480,9 +4600,14 @@ function confirmAddStep() {
   const saved = getSaved();
   saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
   if (imgSrc) saved[sid].img = imgSrc;
+  if (extraImgs.length) saved[sid].imgs2 = extraImgs;
   saveToDB(saved);
+  initStepPhotoGalleries();
+  renderExtraStepPhotos(sid);
   insertStepIntoEditorPanel(secId, sid);
   resetAddStepImg();
+  _extraPhotoState['aextra'] = [];
+  renderExtraPhotoThumbs('aextra');
   if (typeof initEditorSelect === 'function') initEditorSelect();
   closeModal('modal-add-step');
   showToast('✓ Langkah baru ditambahkan');
@@ -5054,6 +5179,10 @@ function buildEditorStepHtml(sid) {
             </div>
           </div>
         </div>
+        <div class="editor-field">
+          <label>Foto Tambahan (maks. 4 foto per langkah)</label>
+          ${extraPhotoWidgetHtml('eextra-' + sid, stepData.imgs2 || [])}
+        </div>
       </div>
     </div>`;
 }
@@ -5320,6 +5449,13 @@ function saveEdits() {
     if (!saved[sid]) saved[sid] = {};
     saved[sid].img = _pendingImgs[sid];
   }
+  for (const prefix in _extraPhotoState) {
+    if (!prefix.startsWith('eextra-')) continue;
+    const sid = prefix.slice('eextra-'.length);
+    if (!saved[sid]) saved[sid] = {};
+    const arr = (_extraPhotoState[prefix] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
+    if (arr.length) saved[sid].imgs2 = arr; else delete saved[sid].imgs2;
+  }
 
   // Header edits (title / desc)
   document.querySelectorAll('[id^="eheader-title-"], [id^="eheader-desc-"]').forEach(input => {
@@ -5405,6 +5541,13 @@ function saveAll() {
     if (!saved[sid]) saved[sid] = {};
     saved[sid].img = _pendingImgs[sid];
   }
+  for (const prefix in _extraPhotoState) {
+    if (!prefix.startsWith('eextra-')) continue;
+    const sid = prefix.slice('eextra-'.length);
+    if (!saved[sid]) saved[sid] = {};
+    const arr = (_extraPhotoState[prefix] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
+    if (arr.length) saved[sid].imgs2 = arr; else delete saved[sid].imgs2;
+  }
   // Header batch save
   document.querySelectorAll('[id^="eheader-title-"], [id^="eheader-desc-"]').forEach(input => {
     const match = input.id.match(/^eheader-(title|desc)-(.+)$/);
@@ -5433,6 +5576,7 @@ function applyAllSaved(saved) {
     if (sid.startsWith('__')) continue;
     const d = saved[sid];
     applyToPage(sid, d.label||null, d.desc||null, d.img||null);
+    renderExtraStepPhotos(sid);
   }
 }
 
@@ -5722,6 +5866,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Restore custom categories (full new categories)
   restoreCustomCategories();
+
+  // Build multi-photo galleries and render any extra photos saved for each step
+  initStepPhotoGalleries();
+  Object.keys(saved).forEach(sid => {
+    if (sid.startsWith('__')) return;
+    renderExtraStepPhotos(sid);
+  });
+
   if (typeof initEditorSelect === 'function') initEditorSelect();
   initEditor();
 
@@ -5754,6 +5906,14 @@ window.addEventListener('DOMContentLoaded', async () => {
         </div>
       </div>
     </div>
+    <div class="modal-field">
+      <label>Foto Tambahan (maks. 4 foto per langkah)</label>
+      <div class="extra-photo-widget">
+        <div class="extra-photo-thumbs" id="mextra-thumbs"></div>
+        <label class="upload-btn">📎 Tambah Foto Lain<input type="file" accept="image/*" multiple onchange="handleExtraPhotoUpload(this,'mextra')"></label>
+        <div class="upload-hint">Maks. 3 foto tambahan (total maks. 4 foto per langkah)</div>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal('modal-step-edit')">Batal</button>
       <button class="modal-btn primary" onclick="saveModalStep()">💾 Simpan</button>
@@ -5782,6 +5942,14 @@ window.addEventListener('DOMContentLoaded', async () => {
           <div class="upload-hint">Format: JPG, PNG, WebP</div>
           <button type="button" onclick="resetAddStepImg()" style="margin-top:8px;padding:5px 10px;font-size:11px;border:.5px solid var(--red-bd);background:var(--red-bg);color:var(--red-tx);border-radius:var(--r-md);cursor:pointer;font-family:var(--font);">↺ Reset ke Asli</button>
         </div>
+      </div>
+    </div>
+    <div class="modal-field">
+      <label>Foto Tambahan (opsional, maks. 4 foto per langkah)</label>
+      <div class="extra-photo-widget">
+        <div class="extra-photo-thumbs" id="aextra-thumbs"></div>
+        <label class="upload-btn">📎 Tambah Foto Lain<input type="file" accept="image/*" multiple onchange="handleExtraPhotoUpload(this,'aextra')"></label>
+        <div class="upload-hint">Maks. 3 foto tambahan (total maks. 4 foto per langkah)</div>
       </div>
     </div>
     <div class="modal-actions">
