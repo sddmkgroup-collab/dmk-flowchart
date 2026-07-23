@@ -4172,7 +4172,7 @@ function deleteFlowNodeUI(btn) {
   }
 }
 
-function saveFlowEdits(btn) {
+async function saveFlowEdits(btn) {
   const wrap = btn.closest('.flow-wrap');
   const sec = wrap.closest('.section');
   if (sec) {
@@ -4180,8 +4180,8 @@ function saveFlowEdits(btn) {
     const svg = wrap.querySelector('svg.flow');
     if (svg) _customFlows[secId] = svg.innerHTML;
   }
-  saveAll();
-  showToast('💾 Alur tersimpan');
+  const ok = await saveAll();
+  notifySaveResult(ok, '💾 Alur tersimpan di Supabase', '⚠️ Alur tersimpan lokal — gagal sync ke Supabase, cek koneksi');
   // Deactivate
   wrap.querySelector('.flow-toggle-edit').classList.remove('active');
   wrap.querySelector('.flow-edit-bar').classList.remove('visible');
@@ -4458,7 +4458,7 @@ function handleModalImg(input) {
   reader.readAsDataURL(input.files[0]);
 }
 
-function saveModalStep() {
+async function saveModalStep() {
   const sid = document.getElementById('modal-sid').value;
   const lbl = document.getElementById('modal-lbl').value;
   const dsc = document.getElementById('modal-dsc').value;
@@ -4482,10 +4482,10 @@ function saveModalStep() {
   if (einLbl) einLbl.value = lbl;
   if (einDsc) einDsc.value = dsc;
   renderExtraPhotoThumbs('eextra-' + sid);
-  saveAll();
+  const ok = await saveAll();
   renderExtraStepPhotos(sid);
   closeModal('modal-step-edit');
-  showToast('✓ Langkah diperbarui');
+  notifySaveResult(ok, '✓ Langkah diperbarui & tersimpan di Supabase');
 }
 
 function confirmDeleteStep(sid) {
@@ -4493,7 +4493,7 @@ function confirmDeleteStep(sid) {
   deleteStep(sid);
 }
 
-function deleteStep(sid) {
+async function deleteStep(sid) {
   const row = document.getElementById('sr-' + sid);
   if (row) row.remove();
   const editorRow = document.getElementById('ed-step-' + sid);
@@ -4506,9 +4506,9 @@ function deleteStep(sid) {
     if (!saved[sid]) saved[sid] = {};
     saved[sid].deleted = true;
   }
-  saveToDB(saved);
+  const ok = await saveToDB(saved);
   if (typeof initEditorSelect === 'function') initEditorSelect();
-  showToast('🗑️ Langkah dihapus');
+  notifySaveResult(ok, '🗑️ Langkah dihapus & tersimpan di Supabase', '⚠️ Langkah dihapus lokal — gagal sync ke Supabase, cek koneksi');
 }
 
 function openAddStep(secId) {
@@ -4558,7 +4558,7 @@ function insertStepIntoEditorPanel(secId, sid) {
   ensureEditorAddStepButton(emModule, secId);
 }
 
-function confirmAddStep() {
+async function confirmAddStep() {
   const secId = document.getElementById('add-step-secid').value;
   const lbl = document.getElementById('add-step-lbl').value.trim();
   const dsc = document.getElementById('add-step-dsc').value.trim();
@@ -4601,7 +4601,7 @@ function confirmAddStep() {
   saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
   if (imgSrc) saved[sid].img = imgSrc;
   if (extraImgs.length) saved[sid].imgs2 = extraImgs;
-  saveToDB(saved);
+  const ok = await saveToDB(saved);
   initStepPhotoGalleries();
   renderExtraStepPhotos(sid);
   insertStepIntoEditorPanel(secId, sid);
@@ -4610,7 +4610,7 @@ function confirmAddStep() {
   renderExtraPhotoThumbs('aextra');
   if (typeof initEditorSelect === 'function') initEditorSelect();
   closeModal('modal-add-step');
-  showToast('✓ Langkah baru ditambahkan');
+  notifySaveResult(ok, '✓ Langkah baru ditambahkan & tersimpan di Supabase', '⚠️ Langkah ditambahkan lokal — gagal sync ke Supabase, cek koneksi');
 }
 
 // ═══════════════════════════════════════════════
@@ -4740,14 +4740,14 @@ async function confirmAddMenu() {
     </div>`;
   main.appendChild(secDiv);
 
-  // Save
+  // Save (localStorage backup + Supabase)
   const saved = getSaved();
   saved['__menu_' + menuId] = { catKey, catName, color, menuName, menuDesc, menuId, menuImage };
-  saveToDB(saved);
+  const ok = await saveToDB(saved);
   initEditorSelect();
   closeModal('modal-add-menu');
   go(menuId);
-  showToast('✓ Menu "' + menuName + '" berhasil ditambahkan ke ' + catName + '!');
+  notifySaveResult(ok, '✓ Menu "' + menuName + '" berhasil ditambahkan & tersimpan di Supabase ke ' + catName + '!', '⚠️ Menu ditambahkan lokal — gagal sync ke Supabase, cek koneksi');
 }
 
 function restoreCustomMenus(saved) {
@@ -4940,7 +4940,7 @@ function openAddCatModal() {
   openModal('modal-add-cat');
 }
 
-function confirmAddCategory() {
+async function confirmAddCategory() {
   const name = document.getElementById('new-cat-name').value.trim();
   const color = document.getElementById('new-cat-color').value;
   const guide = document.getElementById('new-cat-guide').value.trim();
@@ -5008,14 +5008,14 @@ function confirmAddCategory() {
     </div>`;
   main.appendChild(secDiv);
   
-  // Save to localStorage
+  // Save (localStorage backup + Supabase)
   const saved = getSaved();
   saved['__cat_' + catId] = { name, color, guide, desc, guideId };
-  saveToDB(saved);
+  const ok = await saveToDB(saved);
   
   closeModal('modal-add-cat');
   go(guideId);
-  showToast('✓ Kategori "' + name + '" berhasil dibuat!');
+  notifySaveResult(ok, '✓ Kategori "' + name + '" berhasil dibuat & tersimpan di Supabase!', '⚠️ Kategori dibuat lokal — gagal sync ke Supabase, cek koneksi');
 }
 
 // ═══════════════════════════════════════════════
@@ -5094,7 +5094,7 @@ function confirmDeleteModule() {
   deleteModule(secId);
 }
 
-function deleteModule(secId) {
+async function deleteModule(secId) {
   const saved = getSaved();
   const menuKey = '__menu_' + secId;
   if (saved[menuKey]) delete saved[menuKey];
@@ -5105,7 +5105,7 @@ function deleteModule(secId) {
     }
   });
   saved['__deleted_module_' + secId] = true;
-  saveToDB(saved);
+  const ok = await saveToDB(saved);
 
   const sec = document.getElementById('sec-' + secId);
   if (sec) sec.remove();
@@ -5121,7 +5121,7 @@ function deleteModule(secId) {
     sel.value = sel.options[0].value;
     switchEditorModule(sel.value);
   }
-  showToast('🗑️ Modul dan semua langkah yang dimodifikasi berhasil dihapus');
+  notifySaveResult(ok, '🗑️ Modul dan semua langkah yang dimodifikasi berhasil dihapus & tersimpan di Supabase', '⚠️ Modul dihapus lokal — gagal sync ke Supabase, cek koneksi');
 }
 
 function removeModuleFromDOM(secId) {
@@ -5410,7 +5410,7 @@ function handleHeaderImgUpload(input, secId) {
   reader.readAsDataURL(input.files[0]);
 }
 
-function resetHeaderImg(secId) {
+async function resetHeaderImg(secId) {
   const sec = document.getElementById('sec-' + secId);
   const prevEl = document.getElementById('eheader-prev-' + secId);
   if (sec && prevEl) {
@@ -5421,20 +5421,20 @@ function resetHeaderImg(secId) {
   delete _pendingHeaderImgs[secId];
   const saved = getSaved();
   const key = '__menu_' + secId;
-  if (saved[key]) { delete saved[key].menuImage; saveToDB(saved); }
+  if (saved[key]) { delete saved[key].menuImage; await saveToDB(saved); }
 }
 
-function resetImg(sid) {
+async function resetImg(sid) {
   const pageImg = document.getElementById('img-' + sid);
   const prevEl  = document.getElementById('eprev-' + sid);
   if (pageImg && prevEl) prevEl.src = pageImg.getAttribute('data-orig-src') || pageImg.src;
   delete _pendingImgs[sid];
   const saved = getSaved();
-  if (saved[sid]) { delete saved[sid].img; saveToDB(saved); }
+  if (saved[sid]) { delete saved[sid].img; await saveToDB(saved); }
   applyToPage(sid, null, null, null);
 }
 
-function saveEdits() {
+async function saveEdits() {
   const saved = getSaved();
   document.querySelectorAll('[id^="einput-lbl-"], [id^="einput-dsc-"]').forEach(input => {
     const match = input.id.match(/^einput-(lbl|dsc)-(.+)$/);
@@ -5479,7 +5479,7 @@ function saveEdits() {
     saved[key].menuImage = _pendingHeaderImgs[secId];
   }
 
-  saveToDB(saved);
+  const ok = await saveToDB(saved);
   // Apply header changes to page immediately
   for (const k in saved) {
     if (!k.startsWith('__menu_')) continue;
@@ -5490,7 +5490,8 @@ function saveEdits() {
   }
   applyAllSaved(saved);
   showNotice();
-  showToast('💾 Semua perubahan tersimpan!');
+  notifySaveResult(ok, '💾 Semua perubahan tersimpan di Supabase!');
+  return ok;
 }
 
 
@@ -5526,7 +5527,7 @@ function initEditor() {
   if (sel) switchEditorModule(sel.value || 'curr-daily');
 }
 
-function saveAll() {
+async function saveAll() {
   const saved = getSaved();
   document.querySelectorAll('[id^="einput-lbl-"], [id^="einput-dsc-"]').forEach(input => {
     const match = input.id.match(/^einput-(lbl|dsc)-(.+)$/);
@@ -5568,7 +5569,7 @@ function saveAll() {
     if (!saved[key]) saved[key] = { menuId: secId };
     saved[key].menuImage = _pendingHeaderImgs[secId];
   }
-  saveToDB(saved);
+  return await saveToDB(saved);
 }
 
 function applyAllSaved(saved) {
@@ -5593,7 +5594,6 @@ const SUPABASE_URL = window._SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = window._SUPABASE_ANON_KEY || '';
 const APP_ID = 'd365-dmk-v3';
 let _savedCache = null;
-let _dbSaveTimer = null;
 
 async function getSavedAsync() {
   if (_savedCache !== null) return JSON.parse(JSON.stringify(_savedCache));
@@ -5622,30 +5622,59 @@ function getSaved() {
   return JSON.parse(JSON.stringify(_savedCache));
 }
 
-function saveToDB(data) {
+// Saves `data` to localStorage immediately (as an offline backup) and pushes it to the
+// Supabase `app_data` table right away (with automatic retries) so every edit — new steps,
+// text changes, menus, etc. — is actually persisted server-side instead of only living in
+// the browser's localStorage.
+// Returns: true  = confirmed saved to Supabase
+//          false = Supabase save failed after retries (data still safe in localStorage)
+//          null  = Supabase not configured for this app (localStorage-only mode)
+async function saveToDB(data) {
   _savedCache = JSON.parse(JSON.stringify(data));
-  // Always save to localStorage as backup
+  // Always save to localStorage as an immediate local backup
   try { localStorage.setItem('d365_edits', JSON.stringify(data)); } catch(e) {}
-  // Debounced Supabase save
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    clearTimeout(_dbSaveTimer);
-    _dbSaveTimer = setTimeout(async () => {
-      try {
-        await fetch(
-          `${SUPABASE_URL}/rest/v1/app_data?on_conflict=app_id`,
-          {
-            method: 'POST',
-            headers: {
-              'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'resolution=merge-duplicates,return=minimal'
-            },
-            body: JSON.stringify({ app_id: APP_ID, data })
-          }
-        );
-      } catch(e) { console.warn('Supabase save failed', e); }
-    }, 800);
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  return await pushToSupabaseWithRetry(data);
+}
+
+async function pushToSupabaseWithRetry(data, attempt = 1) {
+  const MAX_ATTEMPTS = 3;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_data?on_conflict=app_id`,
+      {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify({ app_id: APP_ID, data })
+      }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(true);
+    return true;
+  } catch (e) {
+    console.warn(`Supabase save failed (attempt ${attempt}/${MAX_ATTEMPTS})`, e);
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, attempt * 1000));
+      // Retry with the freshest cached data in case something else changed meanwhile
+      return pushToSupabaseWithRetry(_savedCache, attempt + 1);
+    }
+    if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(false);
+    return false;
+  }
+}
+
+// Shows a toast reflecting whether the save actually reached Supabase.
+function notifySaveResult(ok, successMsg, failMsg) {
+  if (ok === false) {
+    showToast(failMsg || '⚠️ Gagal tersimpan ke Supabase (tersimpan sementara di perangkat ini) — cek koneksi internet');
+  } else {
+    showToast(successMsg);
   }
 }
 
