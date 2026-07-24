@@ -564,90 +564,12 @@ async function diagnoseSupabase() {
   }
 }
 
-// ===== NEW DB SYSTEM (APP_DATA JSON) =====
-let _appDataCache = { menus: [], categories: [] };
-let _dbReady = false;
-
-async function ensureAppData(){
-  const { data } = await supabaseClient
-    .from('app_data')
-    .select('*')
-    .eq('app_id','main')
-    .maybeSingle();
-
-  if(!data){
-    await supabaseClient.from('app_data').insert({
-      app_id: 'main',
-      data: { menus: [], categories: [] }
-    });
-  }
-}
-
-async function loadDB(){
-  if(_dbReady) return _appDataCache;
-
-  await ensureAppData();
-
-  const { data, error } = await supabaseClient
-    .from('app_data')
-    .select('*')
-    .eq('app_id','main')
-    .single();
-
-  if(error){
-    console.error('Load gagal', error);
-  }else{
-  const loadedData = data.data || { menus: [], categories: [] };
-  _appDataCache.menus = loadedData.menus;
-  _appDataCache.categories = loadedData.categories;
-  }
-
-  _dbReady = true;
-  return _appDataCache;
-}
-
-async function saveAppData(){
-  const { error } = await supabaseClient
-    .from('app_data')
-    .upsert({
-      app_id: 'main',
-      data: _appDataCache,
-      updated_at: new Date()
-    });
-
-  if(error){
-    console.error('Save gagal', error);
-    alert('Gagal simpan ke database');
-    return false;
-  }
-  return true;
-}
-
-// ===== OVERRIDE SAVE FUNCTIONS =====
-async function handleAddMenu(menu){
-  _appDataCache.menus.push(menu);
-  const ok = await saveAppData();
-  if(!ok) return;
-  addMenuToCategory(menu.category, menu);
-  if (typeof initEditorSelect === 'function') {
-    try { initEditorSelect(); } catch(e) { console.warn('initEditorSelect error:', e); }
-  }
-}
-
-async function handleAddCategory(cat){
-  _appDataCache.categories.push(cat);
-  const ok = await saveAppData();
-  if(!ok) return;
-  ensureNavSection(cat.key, cat.name);
-}
-
-async function updateMenu(menu){
-  const i = _appDataCache.menus.findIndex(m=>m.id===menu.id);
-  if(i !== -1){
-    _appDataCache.menus[i] = menu;
-    await saveAppData();
-  }
-}
+// NOTE: Step/menu/category text + images are all persisted through the single
+// `app_data` table (app_id = 'd365-dmk-v3') via getSaved()/saveToDB() defined
+// further below — that is the ONLY storage system this app uses. (An older,
+// unused prototype based on a separate `app_id: 'main'` row with a
+// `{menus, categories}` shape used to live here; it was never wired to any
+// button and has been removed to avoid confusion/duplicate init.)
 
 // ===== ATTACH IMAGE ERROR HANDLERS =====
 function attachImageErrorHandlers() {
@@ -709,37 +631,6 @@ function attachImageErrorHandlers() {
     });
   }
 }
-
-// ===== INIT =====
-document.addEventListener('DOMContentLoaded', async () => {
-  console.log('🚀 Page loaded, initializing...');
-  
-  await loadDB();
-  restoreCustomMenus();
-  try {
-    if (typeof initEditorSelect === 'function') {
-      initEditorSelect();
-    }
-  } catch(e) {
-    console.warn('⚠️ Error calling initEditorSelect:', e.message);
-  }
-  
-  // Run diagnostics for Supabase
-  diagnoseSupabase();
-  
-  // Attach image error handlers after DOM is fully loaded
-  setTimeout(() => {
-    attachImageErrorHandlers();
-    console.log('✓ Image error handlers attached');
-  }, 100);
-  
-  // Re-attach handlers after a delay for any dynamically added content
-  setTimeout(() => {
-    attachImageErrorHandlers();
-    const imageCount = document.querySelectorAll('img[src*="supabase.co"]').length;
-    console.log(`✓ Re-attached handlers for ${imageCount} images`);
-  }, 2000);
-});
 </script>
 
 </head>
@@ -4596,8 +4487,9 @@ async function confirmAddStep() {
     else stepsCard.appendChild(newRow);
   }
   
-  // Save
-  const saved = getSaved();
+  // Save (re-pull the latest data first so this doesn't clobber steps/menus that
+  // were added from another tab or by someone else since this page was loaded)
+  const saved = await refreshSavedCache();
   saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
   if (imgSrc) saved[sid].img = imgSrc;
   if (extraImgs.length) saved[sid].imgs2 = extraImgs;
@@ -4740,8 +4632,9 @@ async function confirmAddMenu() {
     </div>`;
   main.appendChild(secDiv);
 
-  // Save (localStorage backup + Supabase)
-  const saved = getSaved();
+  // Save (localStorage backup + Supabase) — refresh first so a menu created in
+  // another tab/session in the meantime isn't overwritten by this save.
+  const saved = await refreshSavedCache();
   saved['__menu_' + menuId] = { catKey, catName, color, menuName, menuDesc, menuId, menuImage };
   const ok = await saveToDB(saved);
   initEditorSelect();
@@ -4843,6 +4736,42 @@ function restoreCustomMenus(saved) {
         stepsCard.insertBefore(newRow, addRow);
       }
     }
+  }
+}
+
+// Restore steps added via "＋ Tambah Langkah" on a section that already existed in the
+// static page (e.g. built-in modules like Production/Vendor/etc.). Custom steps added
+// to brand-new custom menus/categories are already restored above by
+// restoreCustomMenus()/restoreCustomCategories(); without this pass, any step added
+// through "Tambah Langkah" on an existing module was saved correctly to Supabase but
+// never re-inserted into the page on reload, making it look like saving had failed.
+function restoreCustomStepsForBuiltInSections(saved) {
+  saved = saved || getSaved();
+  for (const sid in saved) {
+    if (sid.startsWith('__')) continue;
+    const d = saved[sid];
+    if (!d || !d.isCustom || !d.secId) continue;
+    if (document.getElementById('sr-' + sid)) continue; // already restored
+    const stepsCard = document.querySelector('#sec-' + d.secId + ' .steps-card');
+    if (!stepsCard) continue; // section doesn't exist (e.g. deleted module)
+    const addRow = stepsCard.querySelector('.add-step-row');
+    const num = stepsCard.querySelectorAll('.step-row').length + 1;
+    const newRow = document.createElement('div');
+    newRow.className = 'step-row';
+    newRow.id = 'sr-' + sid;
+    newRow.innerHTML = `<div class="step-top"><span class="step-num sn-blue">${num}</span>
+      <div class="step-body">
+        <div class="step-label" id="lbl-${sid}">${d.label||''}</div>
+        <div class="step-desc" id="dsc-${sid}">${d.desc||''}</div>
+      </div></div>
+      <div class="step-img" data-step-img="${sid}">
+        <img id="img-${sid}" src="${d.img||''}" alt="" loading="lazy" ${d.img?`data-orig-src="${d.img}"`:''} />
+        <div class="img-caption" data-cap="${sid}">${d.label||''}</div>
+      </div>
+      <div class="step-actions"><button class="step-action-btn" onclick="openStepEdit('${sid}')">✏️ Edit</button>
+      <button class="step-action-btn danger" onclick="deleteStep('${sid}')">✕ Hapus</button></div>`;
+    if (addRow) stepsCard.insertBefore(newRow, addRow);
+    else stepsCard.appendChild(newRow);
   }
 }
 
@@ -5008,8 +4937,9 @@ async function confirmAddCategory() {
     </div>`;
   main.appendChild(secDiv);
   
-  // Save (localStorage backup + Supabase)
-  const saved = getSaved();
+  // Save (localStorage backup + Supabase) — refresh first so a category created in
+  // another tab/session in the meantime isn't overwritten by this save.
+  const saved = await refreshSavedCache();
   saved['__cat_' + catId] = { name, color, guide, desc, guideId };
   const ok = await saveToDB(saved);
   
@@ -5622,6 +5552,27 @@ function getSaved() {
   return JSON.parse(JSON.stringify(_savedCache));
 }
 
+// Always pulls the latest data straight from Supabase (ignoring the in-memory cache)
+// before an "add new thing" action (new step / new menu / new category) merges its
+// own change in and saves. Without this, two people editing at the same time (or the
+// same person in two tabs) can silently wipe out each other's newly created menus —
+// because saveToDB() does a full-blob overwrite based on whatever this tab last knew.
+async function refreshSavedCache() {
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}&select=data`,
+        { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        _savedCache = rows[0]?.data || {};
+      }
+    } catch(e) { console.warn('Could not refresh latest data before saving, falling back to local cache:', e); }
+  }
+  return getSaved();
+}
+
 // Saves `data` to localStorage immediately (as an offline backup) and pushes it to the
 // Supabase `app_data` table right away (with automatic retries) so every edit — new steps,
 // text changes, menus, etc. — is actually persisted server-side instead of only living in
@@ -5641,20 +5592,45 @@ async function saveToDB(data) {
 async function pushToSupabaseWithRetry(data, attempt = 1) {
   const MAX_ATTEMPTS = 3;
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/app_data?on_conflict=app_id`,
+    // Update the existing row first. This works even if the `app_data` table has
+    // no unique constraint on app_id (an ON CONFLICT upsert would fail with
+    // "no unique or exclusion constraint" in that case, which silently dropped
+    // every text/label/desc save while images kept working because they go
+    // through the separate Storage API, not this table).
+    const patchRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`,
       {
-        method: 'POST',
+        method: 'PATCH',
         headers: {
           'apikey': SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates,return=minimal'
+          'Prefer': 'return=representation'
         },
-        body: JSON.stringify({ app_id: APP_ID, data })
+        body: JSON.stringify({ data })
       }
     );
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!patchRes.ok) throw new Error('HTTP ' + patchRes.status + ' (update)');
+    const updatedRows = await patchRes.json().catch(() => []);
+
+    if (!Array.isArray(updatedRows) || !updatedRows.length) {
+      // No row existed yet for this app_id — insert the first one.
+      const postRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/app_data`,
+        {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ app_id: APP_ID, data })
+        }
+      );
+      if (!postRes.ok) throw new Error('HTTP ' + postRes.status + ' (insert)');
+    }
+
     if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(true);
     return true;
   } catch (e) {
@@ -5681,7 +5657,6 @@ function notifySaveResult(ok, successMsg, failMsg) {
 function resetAll() {
   if (!confirm('Reset semua perubahan ke konten asli?\n\nSemua data di Supabase dan localStorage akan dihapus.')) return;
   _savedCache = null;
-  _appDataCache = { menus: [], categories: [] };
   localStorage.removeItem('d365_edits');
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     fetch(`${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`, {
@@ -5896,6 +5871,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Restore custom categories (full new categories)
   restoreCustomCategories();
 
+  // Restore steps added via "Tambah Langkah" on already-existing (built-in) modules —
+  // these were being saved correctly but never reappeared on reload.
+  restoreCustomStepsForBuiltInSections(saved);
+
   // Build multi-photo galleries and render any extra photos saved for each step
   initStepPhotoGalleries();
   Object.keys(saved).forEach(sid => {
@@ -5905,6 +5884,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (typeof initEditorSelect === 'function') initEditorSelect();
   initEditor();
+
+  // Attach robust image error/retry handlers (covers dynamically-added & lazy images too)
+  if (typeof attachImageErrorHandlers === 'function') {
+    setTimeout(attachImageErrorHandlers, 100);
+    setTimeout(attachImageErrorHandlers, 2000);
+  }
 
   // Activate first section on load
   go('curr-daily');
