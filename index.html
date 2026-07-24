@@ -4450,59 +4450,96 @@ function insertStepIntoEditorPanel(secId, sid) {
 }
 
 async function confirmAddStep() {
-  const secId = document.getElementById('add-step-secid').value;
-  const lbl = document.getElementById('add-step-lbl').value.trim();
-  const dsc = document.getElementById('add-step-dsc').value.trim();
-  if (!lbl) { closeModal('modal-add-step'); return; }
-  
-  const sid = secId + '_' + Date.now();
-  const num = (document.querySelectorAll('#sec-' + secId + ' .step-row').length + 1);
-  const imgSrc = _pendingAddStepImg || '';
-  const extraImgs = (_extraPhotoState['aextra'] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
-  
-  // Add to page view
-  const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
-  if (stepsCard) {
-    const newRow = document.createElement('div');
-    newRow.className = 'step-row';
-    newRow.id = 'sr-' + sid;
-    newRow.innerHTML = `
-      <div class="step-top">
-        <span class="step-num sn-blue">${num}</span>
-        <div class="step-body">
-          <div class="step-label" id="lbl-${sid}">${lbl}</div>
-          <div class="step-desc" id="dsc-${sid}">${dsc}</div>
-        </div>
-      </div>
-      <div class="step-img" data-step-img="${sid}">
-        <img id="img-${sid}" src="${imgSrc}" alt="" loading="lazy" />
-        <div class="img-caption" data-cap="${sid}">${lbl}</div>
-      </div>
-      <div class="step-actions visible">
-        <button class="step-action-btn" onclick="openStepEdit('${sid}')">✏️ Edit</button>
-        <button class="step-action-btn danger" onclick="deleteStep('${sid}')">✕ Hapus</button>
-      </div>`;
-    const addRow = stepsCard.querySelector('.add-step-row');
-    if (addRow) stepsCard.insertBefore(newRow, addRow);
-    else stepsCard.appendChild(newRow);
+  const submitBtn = document.getElementById('add-step-submit-btn');
+  if (!submitBtn) {
+    console.error('Tombol submit tidak ditemukan');
+    return;
   }
   
-  // Save (re-pull the latest data first so this doesn't clobber steps/menus that
-  // were added from another tab or by someone else since this page was loaded)
-  const saved = await refreshSavedCache();
-  saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
-  if (imgSrc) saved[sid].img = imgSrc;
-  if (extraImgs.length) saved[sid].imgs2 = extraImgs;
-  const ok = await saveToDB(saved);
-  initStepPhotoGalleries();
-  renderExtraStepPhotos(sid);
-  insertStepIntoEditorPanel(secId, sid);
-  resetAddStepImg();
-  _extraPhotoState['aextra'] = [];
-  renderExtraPhotoThumbs('aextra');
-  if (typeof initEditorSelect === 'function') initEditorSelect();
-  closeModal('modal-add-step');
-  notifySaveResult(ok, '✓ Langkah baru ditambahkan & tersimpan di Supabase', '⚠️ Langkah ditambahkan lokal — gagal sync ke Supabase, cek koneksi');
+  // Disable tombol dan ubah teks untuk mencegah klik ganda
+  const originalText = submitBtn.innerHTML;
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '⏳ Menyimpan...';
+  submitBtn.style.opacity = '0.6';
+  submitBtn.style.cursor = 'wait';
+  
+  try {
+    const secId = document.getElementById('add-step-secid').value;
+    const lbl = document.getElementById('add-step-lbl').value.trim();
+    const dsc = document.getElementById('add-step-dsc').value.trim();
+    
+    if (!lbl) { 
+      alert('Judul langkah tidak boleh kosong');
+      return; 
+    }
+    
+    if (!secId) {
+      alert('Error: ID seksi tidak ditemukan');
+      closeModal('modal-add-step');
+      return;
+    }
+    
+    const sid = secId + '_' + Date.now();
+    const num = (document.querySelectorAll('#sec-' + secId + ' .step-row').length + 1);
+    const imgSrc = _pendingAddStepImg || '';
+    const extraImgs = (_extraPhotoState['aextra'] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
+    
+    // Add to page view
+    const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
+    if (stepsCard) {
+      const newRow = document.createElement('div');
+      newRow.className = 'step-row';
+      newRow.id = 'sr-' + sid;
+      newRow.innerHTML = `
+        <div class="step-top">
+          <span class="step-num sn-blue">${num}</span>
+          <div class="step-body">
+            <div class="step-label" id="lbl-${sid}">${lbl}</div>
+            <div class="step-desc" id="dsc-${sid}">${dsc}</div>
+          </div>
+        </div>
+        <div class="step-img" data-step-img="${sid}">
+          <img id="img-${sid}" src="${imgSrc}" alt="" loading="lazy" />
+          <div class="img-caption" data-cap="${sid}">${lbl}</div>
+        </div>
+        <div class="step-actions visible">
+          <button class="step-action-btn" onclick="openStepEdit('${sid}')">✏️ Edit</button>
+          <button class="step-action-btn danger" onclick="deleteStep('${sid}')">✕ Hapus</button>
+        </div>`;
+      const addRow = stepsCard.querySelector('.add-step-row');
+      if (addRow) stepsCard.insertBefore(newRow, addRow);
+      else stepsCard.appendChild(newRow);
+    }
+    
+    // Save (re-pull the latest data first so this doesn't clobber steps/menus that
+    // were added from another tab or by someone else since this page was loaded)
+    const saved = await refreshSavedCache();
+    saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
+    if (imgSrc) saved[sid].img = imgSrc;
+    if (extraImgs.length) saved[sid].imgs2 = extraImgs;
+    const ok = await saveToDB(saved);
+    
+    initStepPhotoGalleries();
+    renderExtraStepPhotos(sid);
+    insertStepIntoEditorPanel(secId, sid);
+    resetAddStepImg();
+    _extraPhotoState['aextra'] = [];
+    renderExtraPhotoThumbs('aextra');
+    if (typeof initEditorSelect === 'function') initEditorSelect();
+    closeModal('modal-add-step');
+    notifySaveResult(ok, '✓ Langkah baru ditambahkan & tersimpan di Supabase', '⚠️ Langkah ditambahkan lokal — gagal sync ke Supabase, cek koneksi');
+  } catch (error) {
+    console.error('Error saat menambah langkah:', error);
+    alert('Terjadi kesalahan saat menambah langkah: ' + error.message);
+  } finally {
+    // Restore tombol ke keadaan semula
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalText;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -5968,7 +6005,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal('modal-add-step')">Batal</button>
-      <button class="modal-btn primary" onclick="confirmAddStep()">＋ Tambah</button>
+      <button class="modal-btn primary" id="add-step-submit-btn" onclick="confirmAddStep()">＋ Tambah</button>
     </div>
   </div>
 </div>
