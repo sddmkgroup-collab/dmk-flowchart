@@ -4450,9 +4450,11 @@ function insertStepIntoEditorPanel(secId, sid) {
 }
 
 async function confirmAddStep() {
+  console.log('🚀 confirmAddStep() dipanggil');
+  
   const submitBtn = document.getElementById('add-step-submit-btn');
   if (!submitBtn) {
-    console.error('Tombol submit tidak ditemukan');
+    console.error('❌ Tombol submit tidak ditemukan');
     return;
   }
   
@@ -4467,6 +4469,8 @@ async function confirmAddStep() {
     const secId = document.getElementById('add-step-secid').value;
     const lbl = document.getElementById('add-step-lbl').value.trim();
     const dsc = document.getElementById('add-step-dsc').value.trim();
+    
+    console.log('📋 Data input:', { secId, lbl, dsc });
     
     if (!lbl) { 
       alert('Judul langkah tidak boleh kosong');
@@ -4484,9 +4488,15 @@ async function confirmAddStep() {
     const imgSrc = _pendingAddStepImg || '';
     const extraImgs = (_extraPhotoState['aextra'] || []).filter(Boolean).slice(0, MAX_EXTRA_PHOTOS);
     
+    console.log('🔧 Generated step ID:', sid);
+    console.log('🔢 Step number:', num);
+    console.log('🖼️ Has image:', !!imgSrc);
+    console.log('📸 Extra images:', extraImgs.length);
+    
     // Add to page view
     const stepsCard = document.querySelector('#sec-' + secId + ' .steps-card');
     if (stepsCard) {
+      console.log('✅ Steps card found, adding to DOM...');
       const newRow = document.createElement('div');
       newRow.className = 'step-row';
       newRow.id = 'sr-' + sid;
@@ -4509,15 +4519,24 @@ async function confirmAddStep() {
       const addRow = stepsCard.querySelector('.add-step-row');
       if (addRow) stepsCard.insertBefore(newRow, addRow);
       else stepsCard.appendChild(newRow);
+      console.log('✅ Step row added to DOM');
+    } else {
+      console.warn('⚠️ Steps card not found for section:', secId);
     }
     
     // Save (re-pull the latest data first so this doesn't clobber steps/menus that
     // were added from another tab or by someone else since this page was loaded)
+    console.log('🔄 Refreshing cache from Supabase...');
     const saved = await refreshSavedCache();
+    console.log('💾 Cache refreshed, preparing to save...');
+    
     saved[sid] = { label: lbl, desc: dsc, isCustom: true, secId };
     if (imgSrc) saved[sid].img = imgSrc;
     if (extraImgs.length) saved[sid].imgs2 = extraImgs;
+    
+    console.log('📤 Saving to database...');
     const ok = await saveToDB(saved);
+    console.log('💾 Save result:', ok === true ? 'SUCCESS' : ok === false ? 'FAILED' : 'LOCAL_ONLY');
     
     initStepPhotoGalleries();
     renderExtraStepPhotos(sid);
@@ -4526,11 +4545,24 @@ async function confirmAddStep() {
     _extraPhotoState['aextra'] = [];
     renderExtraPhotoThumbs('aextra');
     if (typeof initEditorSelect === 'function') initEditorSelect();
+    
+    console.log('✅ Post-save operations completed');
     closeModal('modal-add-step');
     notifySaveResult(ok, '✓ Langkah baru ditambahkan & tersimpan di Supabase', '⚠️ Langkah ditambahkan lokal — gagal sync ke Supabase, cek koneksi');
+    console.log('✅ confirmAddStep() selesai');
   } catch (error) {
-    console.error('Error saat menambah langkah:', error);
-    alert('Terjadi kesalahan saat menambah langkah: ' + error.message);
+    console.error('❌ Error saat menambah langkah:', error);
+    console.error('Error stack:', error.stack);
+    
+    let errorMsg = 'Terjadi kesalahan saat menambah langkah:\n\n' + error.message;
+    
+    if (error.message.includes('HTTP 500')) {
+      errorMsg += '\n\n💡 SOLUSI CEPAT:\nKetik disableSupabaseSync() di console browser (F12)\nuntuk mode localStorage saja.\n\nData akan tetap tersimpan lokal dan bisa export nanti.';
+    } else {
+      errorMsg += '\n\nCek console browser (F12) untuk detail lengkap.';
+    }
+    
+    alert(errorMsg);
   } finally {
     // Restore tombol ke keadaan semula
     if (submitBtn) {
@@ -4816,7 +4848,11 @@ function updateSupabaseStatus(connected) {
   const dot  = document.getElementById('supabase-dot');
   const text = document.getElementById('supabase-status-text');
   if (!dot || !text) return;
-  if (connected) {
+  
+  if (_supabaseDisabled) {
+    dot.className = 'supabase-dot local';
+    text.textContent = '⚠ Mode Lokal (Supabase dinonaktifkan)';
+  } else if (connected) {
     dot.className = 'supabase-dot connected';
     text.textContent = '✓ Supabase terkoneksi';
   } else {
@@ -4824,6 +4860,29 @@ function updateSupabaseStatus(connected) {
     text.textContent = '⚠ Mode Lokal (localStorage)';
   }
 }
+
+// Helper function untuk user reset Supabase sync dari console
+window.resetSupabaseSync = function() {
+  _supabaseDisabled = false;
+  _consecutiveFailures = 0;
+  localStorage.removeItem('_supabase_disabled');
+  localStorage.removeItem('_supabase_failures');
+  console.log('✅ Supabase sync re-enabled. Refresh halaman untuk efek penuh.');
+  updateSupabaseStatus(false);
+  alert('Supabase sync telah diaktifkan kembali.\n\nSilakan refresh halaman (F5) dan coba lagi.');
+};
+
+window.disableSupabaseSync = function() {
+  _supabaseDisabled = true;
+  localStorage.setItem('_supabase_disabled', 'true');
+  console.log('⚠️ Supabase sync manually disabled. Data akan disimpan ke localStorage saja.');
+  updateSupabaseStatus(false);
+  alert('Supabase sync dinonaktifkan.\n\nData akan disimpan ke localStorage browser saja.');
+};
+
+console.log('💡 Helper functions available:');
+console.log('  - resetSupabaseSync()  : Re-enable Supabase sync');
+console.log('  - disableSupabaseSync(): Disable Supabase sync (localStorage only)');
 
 // ===== TEST SUPABASE STORAGE CONNECTION =====
 async function testSupabaseStorageConnection() {
@@ -5561,6 +5620,8 @@ const SUPABASE_URL = window._SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = window._SUPABASE_ANON_KEY || '';
 const APP_ID = 'd365-dmk-v3';
 let _savedCache = null;
+let _supabaseDisabled = localStorage.getItem('_supabase_disabled') === 'true';
+let _consecutiveFailures = parseInt(localStorage.getItem('_supabase_failures') || '0');
 
 async function getSavedAsync() {
   if (_savedCache !== null) return JSON.parse(JSON.stringify(_savedCache));
@@ -5595,19 +5656,38 @@ function getSaved() {
 // same person in two tabs) can silently wipe out each other's newly created menus —
 // because saveToDB() does a full-blob overwrite based on whatever this tab last knew.
 async function refreshSavedCache() {
+  console.log('🔄 refreshSavedCache() called');
+  
+  if (_supabaseDisabled) {
+    console.warn('⚠️ Supabase disabled, skipping refresh');
+    return getSaved();
+  }
+  
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
+      console.log('📡 Fetching latest data from Supabase...');
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}&select=data`,
         { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
       );
+      console.log('📡 Response status:', res.status, res.statusText);
       if (res.ok) {
         const rows = await res.json();
         _savedCache = rows[0]?.data || {};
+        console.log('✅ Cache refreshed from Supabase, total keys:', Object.keys(_savedCache).length);
+      } else {
+        const errorText = await res.text().catch(() => 'Unable to read error');
+        console.warn('⚠️ Failed to refresh cache from Supabase:', res.status, errorText);
       }
-    } catch(e) { console.warn('Could not refresh latest data before saving, falling back to local cache:', e); }
+    } catch(e) { 
+      console.warn('⚠️ Could not refresh latest data before saving, falling back to local cache:', e); 
+    }
+  } else {
+    console.warn('⚠️ Supabase not configured, using local cache only');
   }
-  return getSaved();
+  const result = getSaved();
+  console.log('📦 Returning saved data with', Object.keys(result).length, 'keys');
+  return result;
 }
 
 // Saves `data` to localStorage immediately (as an offline backup) and pushes it to the
@@ -5618,65 +5698,176 @@ async function refreshSavedCache() {
 //          false = Supabase save failed after retries (data still safe in localStorage)
 //          null  = Supabase not configured for this app (localStorage-only mode)
 async function saveToDB(data) {
+  console.log('💾 saveToDB() called');
   _savedCache = JSON.parse(JSON.stringify(data));
+  
   // Always save to localStorage as an immediate local backup
-  try { localStorage.setItem('d365_edits', JSON.stringify(data)); } catch(e) {}
+  try { 
+    localStorage.setItem('d365_edits', JSON.stringify(data));
+    console.log('✅ Data saved to localStorage');
+  } catch(e) {
+    console.error('❌ Failed to save to localStorage:', e);
+  }
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  return await pushToSupabaseWithRetry(data);
+  // Check if Supabase is disabled
+  if (_supabaseDisabled) {
+    console.warn('⚠️ Supabase sync disabled by user/system - localStorage only');
+    return null;
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.warn('⚠️ Supabase not configured, localStorage-only mode');
+    return null;
+  }
+  
+  // Auto-disable if too many consecutive failures
+  if (_consecutiveFailures >= 3) {
+    console.error('🔥 Too many consecutive failures - disabling Supabase sync');
+    console.error('💡 Refresh halaman atau ketik resetSupabaseSync() di console untuk mencoba lagi');
+    _supabaseDisabled = true;
+    localStorage.setItem('_supabase_disabled', 'true');
+    return null;
+  }
+  
+  console.log('📤 Pushing to Supabase...');
+  const result = await pushToSupabaseWithRetry(data);
+  
+  // Track consecutive failures
+  if (result === false) {
+    _consecutiveFailures++;
+    localStorage.setItem('_supabase_failures', _consecutiveFailures.toString());
+    console.warn(`⚠️ Consecutive failures: ${_consecutiveFailures}/3`);
+  } else if (result === true) {
+    // Reset failure counter on success
+    _consecutiveFailures = 0;
+    localStorage.removeItem('_supabase_failures');
+  }
+  
+  return result;
 }
 
 async function pushToSupabaseWithRetry(data, attempt = 1) {
   const MAX_ATTEMPTS = 3;
   try {
+    // Validasi kredensial Supabase
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.error('❌ Supabase credentials missing:', { 
+        hasURL: !!SUPABASE_URL, 
+        hasKey: !!SUPABASE_ANON_KEY 
+      });
+      throw new Error('Supabase credentials not configured');
+    }
+    
+    console.log(`💾 Attempting to save to Supabase (attempt ${attempt}/${MAX_ATTEMPTS})...`);
+    console.log('📊 Data size:', JSON.stringify(data).length, 'bytes');
+    
     // Update the existing row first. This works even if the `app_data` table has
     // no unique constraint on app_id (an ON CONFLICT upsert would fail with
     // "no unique or exclusion constraint" in that case, which silently dropped
     // every text/label/desc save while images kept working because they go
     // through the separate Storage API, not this table).
-    const patchRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`,
-      {
-        method: 'PATCH',
+    const patchUrl = `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`;
+    console.log('🔄 PATCH URL:', patchUrl);
+    
+    const patchRes = await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify({ data })
+    });
+    
+    console.log('📡 PATCH Response status:', patchRes.status, patchRes.statusText);
+    
+    if (!patchRes.ok) {
+      const errorText = await patchRes.text().catch(() => 'Unable to read error');
+      console.error('❌ PATCH failed:', errorText);
+      
+      // HTTP 500 = server error, kemungkinan tabel tidak ada atau RLS policy issue
+      if (patchRes.status === 500) {
+        console.error('🔥 HTTP 500: Kemungkinan penyebab:');
+        console.error('  1. Tabel "app_data" tidak ada di Supabase');
+        console.error('  2. Struktur kolom tidak sesuai (perlu: app_id:text, data:jsonb)');
+        console.error('  3. RLS (Row Level Security) policy terlalu ketat');
+        console.error('  4. Database constraint violation');
+        console.error('');
+        console.error('💡 SOLUSI SEMENTARA: Ketik disableSupabaseSync() untuk mode localStorage saja');
+        console.error('');
+        console.error('💡 PERBAIKAN PERMANEN: Buat tabel di Supabase dengan SQL berikut:');
+        console.error('');
+        console.error('CREATE TABLE IF NOT EXISTS app_data (');
+        console.error('  id BIGSERIAL PRIMARY KEY,');
+        console.error('  app_id TEXT NOT NULL,');
+        console.error('  data JSONB NOT NULL DEFAULT \'{}\'::jsonb,');
+        console.error('  created_at TIMESTAMPTZ DEFAULT NOW(),');
+        console.error('  updated_at TIMESTAMPTZ DEFAULT NOW()');
+        console.error(');');
+        console.error('');
+        console.error('-- Allow public access (atau sesuaikan dengan kebutuhan):');
+        console.error('ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;');
+        console.error('CREATE POLICY "Allow all" ON app_data FOR ALL USING (true) WITH CHECK (true);');
+        console.error('');
+      }
+      
+      throw new Error(`HTTP ${patchRes.status} (update): ${errorText}`);
+    }
+    
+    const updatedRows = await patchRes.json().catch((e) => {
+      console.warn('⚠️ Could not parse PATCH response as JSON:', e);
+      return [];
+    });
+    
+    console.log('✅ PATCH result:', updatedRows.length, 'row(s) updated');
+
+    if (!Array.isArray(updatedRows) || !updatedRows.length) {
+      // No row existed yet for this app_id — insert the first one.
+      console.log('➕ No existing row found, inserting new record...');
+      const postUrl = `${SUPABASE_URL}/rest/v1/app_data`;
+      
+      const postRes = await fetch(postUrl, {
+        method: 'POST',
         headers: {
           'apikey': SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
+          'Prefer': 'return=minimal'
         },
-        body: JSON.stringify({ data })
+        body: JSON.stringify({ app_id: APP_ID, data })
+      });
+      
+      console.log('📡 POST Response status:', postRes.status, postRes.statusText);
+      
+      if (!postRes.ok) {
+        const errorText = await postRes.text().catch(() => 'Unable to read error');
+        console.error('❌ POST failed:', errorText);
+        throw new Error(`HTTP ${postRes.status} (insert): ${errorText}`);
       }
-    );
-    if (!patchRes.ok) throw new Error('HTTP ' + patchRes.status + ' (update)');
-    const updatedRows = await patchRes.json().catch(() => []);
-
-    if (!Array.isArray(updatedRows) || !updatedRows.length) {
-      // No row existed yet for this app_id — insert the first one.
-      const postRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/app_data`,
-        {
-          method: 'POST',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify({ app_id: APP_ID, data })
-        }
-      );
-      if (!postRes.ok) throw new Error('HTTP ' + postRes.status + ' (insert)');
+      
+      console.log('✅ New record inserted successfully');
     }
 
+    console.log('✅ Data saved to Supabase successfully!');
     if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(true);
     return true;
   } catch (e) {
-    console.warn(`Supabase save failed (attempt ${attempt}/${MAX_ATTEMPTS})`, e);
+    console.error(`❌ Supabase save failed (attempt ${attempt}/${MAX_ATTEMPTS}):`, e);
+    console.error('Error details:', {
+      message: e.message,
+      stack: e.stack,
+      name: e.name
+    });
+    
     if (attempt < MAX_ATTEMPTS) {
+      console.log(`⏳ Retrying in ${attempt} second(s)...`);
       await new Promise(r => setTimeout(r, attempt * 1000));
       // Retry with the freshest cached data in case something else changed meanwhile
       return pushToSupabaseWithRetry(_savedCache, attempt + 1);
     }
+    
+    console.error('❌ All retry attempts exhausted. Data saved locally only.');
     if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(false);
     return false;
   }
@@ -5685,9 +5876,19 @@ async function pushToSupabaseWithRetry(data, attempt = 1) {
 // Shows a toast reflecting whether the save actually reached Supabase.
 function notifySaveResult(ok, successMsg, failMsg) {
   if (ok === false) {
-    showToast(failMsg || '⚠️ Gagal tersimpan ke Supabase (tersimpan sementara di perangkat ini) — cek koneksi internet');
-  } else {
+    const defaultFailMsg = '⚠️ Gagal tersimpan ke Supabase — Data tersimpan lokal, cek console (F12)';
+    showToast(failMsg || defaultFailMsg);
+    console.warn('💡 TIP: Buka Developer Console (tekan F12) untuk melihat detail error');
+    console.warn('💡 Jika error terus berlanjut, ketik disableSupabaseSync() untuk mode localStorage saja');
+  } else if (ok === true) {
     showToast(successMsg);
+  } else if (ok === null) {
+    // Supabase disabled or not configured
+    if (_supabaseDisabled) {
+      showToast('✓ Tersimpan lokal (Supabase dinonaktifkan)');
+    } else {
+      console.warn('⚠️ Supabase not configured, data saved to localStorage only');
+    }
   }
 }
 
@@ -5777,6 +5978,22 @@ function restoreCustomCategories() {
 // INIT
 // ═══════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
+  console.log('═══════════════════════════════════════════════════');
+  console.log('📱 DMK Flowchart App Initialized');
+  console.log('═══════════════════════════════════════════════════');
+  console.log('🔧 Supabase Configuration:');
+  console.log('  - URL:', SUPABASE_URL || '❌ NOT SET');
+  console.log('  - API Key:', SUPABASE_ANON_KEY ? `✅ SET (${SUPABASE_ANON_KEY.substring(0, 20)}...)` : '❌ NOT SET');
+  console.log('  - App ID:', APP_ID);
+  console.log('  - Status:', (SUPABASE_URL && SUPABASE_ANON_KEY) ? '✅ CONFIGURED' : '❌ NOT CONFIGURED');
+  console.log('  - Sync Enabled:', !_supabaseDisabled);
+  console.log('  - Consecutive Failures:', _consecutiveFailures);
+  if (_supabaseDisabled) {
+    console.warn('⚠️ SUPABASE SYNC DISABLED - localStorage only mode');
+    console.warn('💡 To re-enable: ketik resetSupabaseSync() di console');
+  }
+  console.log('═══════════════════════════════════════════════════');
+  
   // Fix all Supabase image URLs
   document.querySelectorAll('[id^="img-"]').forEach(img => {
     img.setAttribute('data-orig-src', img.src);
