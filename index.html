@@ -5965,7 +5965,7 @@ async function pushToSupabaseWithRetry(data, attempt = 1) {
       // HTTP 500 = server error, kemungkinan tabel tidak ada atau RLS policy issue
       if (patchRes.status === 500) {
         console.error('🔥 HTTP 500: Kemungkinan penyebab:');
-        console.error('  1. Tabel "app_data" tidak ada di Supabase');
+        console.error('  1. Tabel app_data tidak ada di Supabase');
         console.error('  2. Struktur kolom tidak sesuai (perlu: app_id:text, data:jsonb)');
         console.error('  3. RLS (Row Level Security) policy terlalu ketat');
         console.error('  4. Database constraint violation');
@@ -5974,17 +5974,17 @@ async function pushToSupabaseWithRetry(data, attempt = 1) {
         console.error('');
         console.error('💡 PERBAIKAN PERMANEN: Buat tabel di Supabase dengan SQL berikut:');
         console.error('');
-        console.error('CREATE TABLE IF NOT EXISTS app_data (');
-        console.error('  id BIGSERIAL PRIMARY KEY,');
-        console.error('  app_id TEXT NOT NULL,');
-        console.error('  data JSONB NOT NULL DEFAULT \'{}\'::jsonb,');
-        console.error('  created_at TIMESTAMPTZ DEFAULT NOW(),');
-        console.error('  updated_at TIMESTAMPTZ DEFAULT NOW()');
-        console.error(');');
-        console.error('');
-        console.error('-- Allow public access (atau sesuaikan dengan kebutuhan):');
-        console.error('ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;');
-        console.error('CREATE POLICY "Allow all" ON app_data FOR ALL USING (true) WITH CHECK (true);');
+        const sqlScript = `CREATE TABLE IF NOT EXISTS app_data (
+  id BIGSERIAL PRIMARY KEY,
+  app_id TEXT NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all" ON app_data FOR ALL USING (true) WITH CHECK (true);`;
+        console.error(sqlScript);
         console.error('');
       }
       
