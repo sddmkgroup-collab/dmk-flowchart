@@ -4620,96 +4620,191 @@ function handleAddMenuImageChange(event) {
 }
 
 async function confirmAddMenu() {
-  const catKey   = document.getElementById('add-menu-catkey').value;
-  const catName  = document.getElementById('add-menu-catname').value;
-  const color    = document.getElementById('add-menu-color').value;
-  const menuName = document.getElementById('add-menu-name').value.trim();
-  const menuDesc = document.getElementById('add-menu-desc').value.trim();
-  const menuImageFile = document.getElementById('add-menu-image').files[0];
-  if (!menuName) { closeModal('modal-add-menu'); return; }
+  console.log('🚀 confirmAddMenu() dipanggil');
+  
+  // Find submit button for loading state
+  const submitBtn = document.querySelector('#modal-add-menu .modal-footer button[onclick*="confirmAddMenu"]');
+  const originalBtnText = submitBtn ? submitBtn.innerHTML : '';
+  
+  try {
+    // Disable button and show loading state
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '⏳ Menyimpan...';
+      submitBtn.style.opacity = '0.6';
+      submitBtn.style.cursor = 'wait';
+    }
+    
+    // Get form values
+    const catKey   = document.getElementById('add-menu-catkey').value;
+    const catName  = document.getElementById('add-menu-catname').value;
+    const color    = document.getElementById('add-menu-color').value;
+    const menuName = document.getElementById('add-menu-name').value.trim();
+    const menuDesc = document.getElementById('add-menu-desc').value.trim();
+    const menuImageFile = document.getElementById('add-menu-image').files[0];
+    
+    console.log('📋 Form data:', { catKey, catName, color, menuName, menuDesc, hasImage: !!menuImageFile });
+    
+    // Validation
+    if (!menuName) {
+      console.warn('⚠️ Nama menu kosong, batalkan operasi');
+      closeModal('modal-add-menu');
+      return;
+    }
+    
+    if (!catKey || !catName) {
+      console.error('❌ Category key atau name tidak valid');
+      alert('Error: Category tidak valid. Mohon coba lagi.');
+      return;
+    }
 
-  let menuImage = '';
-  if (menuImageFile) {
-    try {
-      menuImage = await readFileAsDataURL(menuImageFile);
-    } catch (err) {
-      console.warn('Gagal membaca file gambar:', err);
+    // Read image file if provided
+    let menuImage = '';
+    if (menuImageFile) {
+      console.log('📷 Membaca file gambar:', menuImageFile.name, menuImageFile.size, 'bytes');
+      try {
+        menuImage = await readFileAsDataURL(menuImageFile);
+        console.log('✅ Gambar berhasil dibaca, size:', menuImage.length, 'chars');
+      } catch (err) {
+        console.error('❌ Gagal membaca file gambar:', err);
+        alert('Gagal membaca gambar: ' + err.message);
+        return;
+      }
+    }
+
+    // Generate menu ID
+    const menuId = catKey + '_menu_' + Date.now();
+    console.log('🆔 Generated menuId:', menuId);
+    
+    const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
+    const tagClass = { blue:'tag-finance', green:'tag-scm', amber:'tag-prod', gray:'tag-master' }[color] || 'tag-master';
+    const fcClass  = { blue:'fc-blue', green:'fc-green', amber:'fc-amber', gray:'fc-gray' }[color] || 'fc-blue';
+
+    // Add nav button to correct sidebar section
+    console.log('🔍 Mencari nav section untuk catKey:', catKey);
+    const navSec = document.getElementById('nav-sec-' + catKey) ||
+                   document.querySelector('.sidebar [data-catkey="'+catKey+'"]');
+    if (navSec) {
+      console.log('✅ Nav section ditemukan, menambahkan button');
+      const addBtn = navSec.querySelector('.nav-add-menu-btn');
+      const newBtn = document.createElement('button');
+      newBtn.className = 'nav-item';
+      newBtn.id = 'nav-' + menuId;
+      newBtn.onclick = () => go(menuId);
+      newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${menuName}`;
+      navSec.insertBefore(newBtn, addBtn);
+      console.log('✅ Nav button ditambahkan dengan ID:', 'nav-' + menuId);
+    } else {
+      console.warn('⚠️ Nav section tidak ditemukan untuk catKey:', catKey);
+    }
+
+    // Create content section
+    console.log('📄 Membuat content section');
+    const main = document.querySelector('.main');
+    if (!main) {
+      console.error('❌ Main element tidak ditemukan');
+      alert('Error: Main container tidak ditemukan');
+      return;
+    }
+    
+    const secDiv = document.createElement('div');
+    secDiv.className = 'section';
+    secDiv.id = 'sec-' + menuId;
+    secDiv.innerHTML = `
+      <div class="page-header">
+        <div class="breadcrumb" style="display:flex;align-items:center;gap:5px;">
+          <span style="color:var(--text3)">${catName} </span><span>›</span><span>${menuName}</span>
+        </div>
+        <h1>${menuName}</h1><p>${menuDesc || 'Panduan ' + menuName + ' di ' + catName + ' Microsoft Dynamics 365 Business Central.'}</p>
+      </div>
+      ${menuImage ? `
+      <div class="menu-image-preview"><img src="${menuImage}" alt="Gambar ${menuName}"></div>
+      ` : ''}
+      <div class="process-block">
+        <div class="process-title">Alur Proses <span class="tag ${tagClass}">${catName} › ${menuName}</span></div>
+        <div class="flow-wrap">
+          <button class="flow-toggle-edit" onclick="toggleFlowEdit(this)" title="Edit alur">✏️ Edit Alur</button>
+          <div class="flow-edit-bar"><span>✏️ Mode Edit Alur:</span>
+            <button class="fe-btn" onclick="addFlowNodeUI(this)">＋ Node</button>
+            <button class="fe-btn" onclick="editFlowNodeUI(this)">✏️ Edit</button>
+            <button class="fe-btn danger" onclick="deleteFlowNodeUI(this)">✕ Hapus</button>
+            <button class="fe-btn" onclick="saveFlowEdits(this)">💾 Simpan</button>
+          </div>
+          <svg class="flow" viewBox="0 0 460 90">
+            <defs><marker id="ARR_${menuId}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+            <g class="fc-gray"><rect x="8" y="24" width="64" height="40" rx="7" stroke-width="0.5"/><text x="40" y="44" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Mulai</text></g>
+            <line x1="72" y1="44" x2="100" y2="44" class="arr" marker-end="url(#ARR_${menuId})"/>
+            <g class="${fcClass}"><rect x="100" y="14" width="160" height="60" rx="7" stroke-width="0.5"/><text x="180" y="39" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">${menuName}</text><text x="180" y="57" text-anchor="middle" dominant-baseline="central" font-size="11">${catName}</text></g>
+            <line x1="260" y1="44" x2="290" y2="44" class="arr" marker-end="url(#ARR_${menuId})"/>
+            <g class="fc-teal"><rect x="290" y="24" width="140" height="40" rx="7" stroke-width="0.5"/><text x="360" y="44" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Selesai</text></g>
+          </svg>
+        </div>
+      </div>
+      <div class="process-block">
+        <div class="process-title">Panduan Langkah &amp; Screenshot</div>
+        <div class="steps-card">
+          <div class="steps-header">Panduan DMK Group — ${catName} › ${menuName}</div>
+          <div class="add-step-row visible">
+            <button class="add-step-btn" onclick="openAddStep('${menuId}')">＋ Tambah Langkah Pertama</button>
+          </div>
+        </div>
+      </div>`;
+    main.appendChild(secDiv);
+    console.log('✅ Content section ditambahkan dengan ID:', 'sec-' + menuId);
+
+    // Save (localStorage backup + Supabase) — refresh first so a menu created in
+    // another tab/session in the meantime isn't overwritten by this save.
+    console.log('💾 Memulai proses penyimpanan...');
+    console.log('🔄 Refresh cache dari Supabase...');
+    const saved = await refreshSavedCache();
+    console.log('📦 Cache refreshed, total keys:', Object.keys(saved).length);
+    
+    // Add menu to saved data
+    const menuData = { catKey, catName, color, menuName, menuDesc, menuId, menuImage };
+    saved['__menu_' + menuId] = menuData;
+    console.log('📝 Menu data ditambahkan ke cache dengan key:', '__menu_' + menuId);
+    console.log('📊 Menu data:', { ...menuData, menuImage: menuImage ? `[${menuImage.length} chars]` : 'none' });
+    
+    // Save to DB
+    console.log('💾 Menyimpan ke database...');
+    const ok = await saveToDB(saved);
+    console.log('💾 Save result:', ok === true ? 'SUCCESS (Supabase)' : ok === false ? 'FAILED (localStorage only)' : 'DISABLED (localStorage only)');
+    
+    // Refresh editor
+    if (typeof initEditorSelect === 'function') {
+      initEditorSelect();
+      console.log('✅ Editor select refreshed');
+    }
+    
+    // Close modal and navigate
+    closeModal('modal-add-menu');
+    console.log('✅ Modal ditutup');
+    
+    go(menuId);
+    console.log('✅ Navigasi ke menu baru:', menuId);
+    
+    // Show result notification
+    notifySaveResult(
+      ok, 
+      '✓ Menu "' + menuName + '" berhasil ditambahkan & tersimpan di Supabase ke ' + catName + '!', 
+      '⚠️ Menu ditambahkan lokal — gagal sync ke Supabase. Ketik disableSupabaseSync() di console jika ingin gunakan localStorage saja.'
+    );
+    
+    console.log('✅ confirmAddMenu() selesai');
+    
+  } catch (error) {
+    console.error('❌ Error di confirmAddMenu():', error);
+    console.error('Stack trace:', error.stack);
+    alert('Gagal menyimpan menu: ' + error.message + '\n\nCek console (F12) untuk detail error.');
+  } finally {
+    // Restore button state
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnText;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
     }
   }
-
-  const menuId = catKey + '_menu_' + Date.now();
-  const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
-  const tagClass = { blue:'tag-finance', green:'tag-scm', amber:'tag-prod', gray:'tag-master' }[color] || 'tag-master';
-  const fcClass  = { blue:'fc-blue', green:'fc-green', amber:'fc-amber', gray:'fc-gray' }[color] || 'fc-blue';
-
-  // Add nav button to correct sidebar section
-  const navSec = document.getElementById('nav-sec-' + catKey) ||
-                 document.querySelector('.sidebar [data-catkey="'+catKey+'"]');
-  if (navSec) {
-    const addBtn = navSec.querySelector('.nav-add-menu-btn');
-    const newBtn = document.createElement('button');
-    newBtn.className = 'nav-item';
-    newBtn.id = 'nav-' + menuId;
-    newBtn.onclick = () => go(menuId);
-    newBtn.innerHTML = `<span class="nav-dot" style="background:${dotColor}"></span>${menuName}`;
-    navSec.insertBefore(newBtn, addBtn);
-  }
-
-  // Create content section
-  const main = document.querySelector('.main');
-  const secDiv = document.createElement('div');
-  secDiv.className = 'section';
-  secDiv.id = 'sec-' + menuId;
-  secDiv.innerHTML = `
-    <div class="page-header">
-      <div class="breadcrumb" style="display:flex;align-items:center;gap:5px;">
-        <span style="color:var(--text3)">${catName} </span><span>›</span><span>${menuName}</span>
-      </div>
-      <h1>${menuName}</h1><p>${menuDesc || 'Panduan ' + menuName + ' di ' + catName + ' Microsoft Dynamics 365 Business Central.'}</p>
-    </div>
-    ${menuImage ? `
-    <div class="menu-image-preview"><img src="${menuImage}" alt="Gambar ${menuName}"></div>
-    ` : ''}
-    <div class="process-block">
-      <div class="process-title">Alur Proses <span class="tag ${tagClass}">${catName} › ${menuName}</span></div>
-      <div class="flow-wrap">
-        <button class="flow-toggle-edit" onclick="toggleFlowEdit(this)" title="Edit alur">✏️ Edit Alur</button>
-        <div class="flow-edit-bar"><span>✏️ Mode Edit Alur:</span>
-          <button class="fe-btn" onclick="addFlowNodeUI(this)">＋ Node</button>
-          <button class="fe-btn" onclick="editFlowNodeUI(this)">✏️ Edit</button>
-          <button class="fe-btn danger" onclick="deleteFlowNodeUI(this)">✕ Hapus</button>
-          <button class="fe-btn" onclick="saveFlowEdits(this)">💾 Simpan</button>
-        </div>
-        <svg class="flow" viewBox="0 0 460 90">
-          <defs><marker id="ARR_${menuId}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-          <g class="fc-gray"><rect x="8" y="24" width="64" height="40" rx="7" stroke-width="0.5"/><text x="40" y="44" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Mulai</text></g>
-          <line x1="72" y1="44" x2="100" y2="44" class="arr" marker-end="url(#ARR_${menuId})"/>
-          <g class="${fcClass}"><rect x="100" y="14" width="160" height="60" rx="7" stroke-width="0.5"/><text x="180" y="39" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">${menuName}</text><text x="180" y="57" text-anchor="middle" dominant-baseline="central" font-size="11">${catName}</text></g>
-          <line x1="260" y1="44" x2="290" y2="44" class="arr" marker-end="url(#ARR_${menuId})"/>
-          <g class="fc-teal"><rect x="290" y="24" width="140" height="40" rx="7" stroke-width="0.5"/><text x="360" y="44" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Selesai</text></g>
-        </svg>
-      </div>
-    </div>
-    <div class="process-block">
-      <div class="process-title">Panduan Langkah &amp; Screenshot</div>
-      <div class="steps-card">
-        <div class="steps-header">Panduan DMK Group — ${catName} › ${menuName}</div>
-        <div class="add-step-row visible">
-          <button class="add-step-btn" onclick="openAddStep('${menuId}')">＋ Tambah Langkah Pertama</button>
-        </div>
-      </div>
-    </div>`;
-  main.appendChild(secDiv);
-
-  // Save (localStorage backup + Supabase) — refresh first so a menu created in
-  // another tab/session in the meantime isn't overwritten by this save.
-  const saved = await refreshSavedCache();
-  saved['__menu_' + menuId] = { catKey, catName, color, menuName, menuDesc, menuId, menuImage };
-  const ok = await saveToDB(saved);
-  initEditorSelect();
-  closeModal('modal-add-menu');
-  go(menuId);
-  notifySaveResult(ok, '✓ Menu "' + menuName + '" berhasil ditambahkan & tersimpan di Supabase ke ' + catName + '!', '⚠️ Menu ditambahkan lokal — gagal sync ke Supabase, cek koneksi');
 }
 
 function restoreCustomMenus(saved) {
@@ -4966,82 +5061,163 @@ function openAddCatModal() {
 }
 
 async function confirmAddCategory() {
-  const name = document.getElementById('new-cat-name').value.trim();
-  const color = document.getElementById('new-cat-color').value;
-  const guide = document.getElementById('new-cat-guide').value.trim();
-  const desc = document.getElementById('new-cat-desc').value.trim();
-  if (!name) { closeModal('modal-add-cat'); return; }
+  console.log('🚀 confirmAddCategory() dipanggil');
   
-  const catId = 'cat_' + Date.now();
-  const guideId = catId + '_g1';
-  const tagClass = { blue:'tag-finance', green:'tag-scm', amber:'tag-prod', gray:'tag-master' }[color] || 'tag-master';
-  const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
+  // Find submit button for loading state
+  const submitBtn = document.querySelector('#modal-add-cat .modal-footer button[onclick*="confirmAddCategory"]');
+  const originalBtnText = submitBtn ? submitBtn.innerHTML : '';
   
-  // Add to sidebar
-  const nav = document.querySelector('.sidebar');
-  const editBtn = nav.querySelector('.nav-edit-btn');
-  const section = document.createElement('div');
-  section.className = 'nav-section';
-  section.innerHTML = `
-    <div class="nav-label">${name}</div>
-    <button class="nav-item" onclick="go('${guideId}')" id="nav-${guideId}">
-      <span class="nav-dot" style="background:${dotColor}"></span>${guide || name}
-    </button>`;
-  nav.insertBefore(section, editBtn);
-  
-  // Create section in main
-  const main = document.querySelector('.main');
-  const secDiv = document.createElement('div');
-  secDiv.className = 'section';
-  secDiv.id = 'sec-' + guideId;
-  secDiv.innerHTML = `
-    <div class="page-header">
-      <div class="breadcrumb" style="display:flex;align-items:center;gap:4px;">
-        <span style="color:var(--text3)">${name}</span>
-      </div>
-      <h1>${guide || name}</h1>
-      <p>${desc || 'Panduan baru - tambahkan langkah-langkah di bawah.'}</p>
-    </div>
-    <div class="process-block">
-      <div class="process-title">Alur Proses <span class="tag ${tagClass}">${name} › ${guide}</span></div>
-      <div class="flow-wrap" style="padding:20px;text-align:center;color:var(--text3);font-size:13px;">
-        <button class="flow-toggle-edit" onclick="toggleFlowEdit(this)" title="Edit alur">✏️ Edit Alur</button>
-        <div class="flow-edit-bar"><span>✏️ Mode Edit Alur:</span>
-          <button class="fe-btn" onclick="addFlowNodeUI(this)">＋ Node</button>
-          <button class="fe-btn" onclick="editFlowNodeUI(this)">✏️ Edit</button>
-          <button class="fe-btn danger" onclick="deleteFlowNodeUI(this)">✕ Hapus</button>
-          <button class="fe-btn" onclick="saveFlowEdits(this)">💾 Simpan</button>
+  try {
+    // Disable button and show loading state
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '⏳ Menyimpan...';
+      submitBtn.style.opacity = '0.6';
+      submitBtn.style.cursor = 'wait';
+    }
+    
+    // Get form values
+    const name = document.getElementById('new-cat-name').value.trim();
+    const color = document.getElementById('new-cat-color').value;
+    const guide = document.getElementById('new-cat-guide').value.trim();
+    const desc = document.getElementById('new-cat-desc').value.trim();
+    
+    console.log('📋 Form data:', { name, color, guide, desc });
+    
+    // Validation
+    if (!name) {
+      console.warn('⚠️ Nama category kosong, batalkan operasi');
+      closeModal('modal-add-cat');
+      return;
+    }
+    
+    // Generate IDs
+    const catId = 'cat_' + Date.now();
+    const guideId = catId + '_g1';
+    console.log('🆔 Generated IDs:', { catId, guideId });
+    
+    const tagClass = { blue:'tag-finance', green:'tag-scm', amber:'tag-prod', gray:'tag-master' }[color] || 'tag-master';
+    const dotColor = { blue:'var(--blue-dot)', green:'var(--green-dot)', amber:'var(--amber-dot)', gray:'#5f5e5a' }[color] || '#5f5e5a';
+    
+    // Add to sidebar
+    console.log('📍 Menambahkan ke sidebar');
+    const nav = document.querySelector('.sidebar');
+    if (!nav) {
+      console.error('❌ Sidebar tidak ditemukan');
+      alert('Error: Sidebar tidak ditemukan');
+      return;
+    }
+    
+    const editBtn = nav.querySelector('.nav-edit-btn');
+    const section = document.createElement('div');
+    section.className = 'nav-section';
+    section.innerHTML = `
+      <div class="nav-label">${name}</div>
+      <button class="nav-item" onclick="go('${guideId}')" id="nav-${guideId}">
+        <span class="nav-dot" style="background:${dotColor}"></span>${guide || name}
+      </button>`;
+    nav.insertBefore(section, editBtn);
+    console.log('✅ Sidebar section ditambahkan');
+    
+    // Create section in main
+    console.log('📄 Membuat content section');
+    const main = document.querySelector('.main');
+    if (!main) {
+      console.error('❌ Main element tidak ditemukan');
+      alert('Error: Main container tidak ditemukan');
+      return;
+    }
+    
+    const secDiv = document.createElement('div');
+    secDiv.className = 'section';
+    secDiv.id = 'sec-' + guideId;
+    secDiv.innerHTML = `
+      <div class="page-header">
+        <div class="breadcrumb" style="display:flex;align-items:center;gap:4px;">
+          <span style="color:var(--text3)">${name}</span>
         </div>
-        <svg class="flow" viewBox="0 0 400 80">
-          <defs><marker id="ARR_${guideId}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-          <g class="fc-gray"><rect x="10" y="20" width="60" height="40" rx="7" stroke-width="0.5"/><text x="40" y="40" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Mulai</text></g>
-          <line x1="70" y1="40" x2="120" y2="40" class="arr" marker-end="url(#ARR_${guideId})"/>
-          <g class="fc-${color === 'gray' ? 'gray' : color === 'amber' ? 'amber' : color === 'green' ? 'green' : 'blue'}"><rect x="120" y="15" width="140" height="50" rx="7" stroke-width="0.5"/><text x="190" y="40" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">${guide || name}</text></g>
-          <line x1="260" y1="40" x2="310" y2="40" class="arr" marker-end="url(#ARR_${guideId})"/>
-          <g class="fc-teal"><rect x="310" y="20" width="70" height="40" rx="7" stroke-width="0.5"/><text x="345" y="40" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Selesai</text></g>
-        </svg>
+        <h1>${guide || name}</h1>
+        <p>${desc || 'Panduan baru - tambahkan langkah-langkah di bawah.'}</p>
       </div>
-    </div>
-    <div class="process-block">
-      <div class="process-title">Panduan Langkah</div>
-      <div class="steps-card">
-        <div class="steps-header">Panduan DMK Group — ${name}</div>
-        <div class="add-step-row visible">
-          <button class="add-step-btn" onclick="openAddStep('${guideId}')">＋ Tambah Langkah Pertama</button>
+      <div class="process-block">
+        <div class="process-title">Alur Proses <span class="tag ${tagClass}">${name} › ${guide}</span></div>
+        <div class="flow-wrap" style="padding:20px;text-align:center;color:var(--text3);font-size:13px;">
+          <button class="flow-toggle-edit" onclick="toggleFlowEdit(this)" title="Edit alur">✏️ Edit Alur</button>
+          <div class="flow-edit-bar"><span>✏️ Mode Edit Alur:</span>
+            <button class="fe-btn" onclick="addFlowNodeUI(this)">＋ Node</button>
+            <button class="fe-btn" onclick="editFlowNodeUI(this)">✏️ Edit</button>
+            <button class="fe-btn danger" onclick="deleteFlowNodeUI(this)">✕ Hapus</button>
+            <button class="fe-btn" onclick="saveFlowEdits(this)">💾 Simpan</button>
+          </div>
+          <svg class="flow" viewBox="0 0 400 80">
+            <defs><marker id="ARR_${guideId}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+            <g class="fc-gray"><rect x="10" y="20" width="60" height="40" rx="7" stroke-width="0.5"/><text x="40" y="40" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Mulai</text></g>
+            <line x1="70" y1="40" x2="120" y2="40" class="arr" marker-end="url(#ARR_${guideId})"/>
+            <g class="fc-${color === 'gray' ? 'gray' : color === 'amber' ? 'amber' : color === 'green' ? 'green' : 'blue'}"><rect x="120" y="15" width="140" height="50" rx="7" stroke-width="0.5"/><text x="190" y="40" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">${guide || name}</text></g>
+            <line x1="260" y1="40" x2="310" y2="40" class="arr" marker-end="url(#ARR_${guideId})"/>
+            <g class="fc-teal"><rect x="310" y="20" width="70" height="40" rx="7" stroke-width="0.5"/><text x="345" y="40" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="600">Selesai</text></g>
+          </svg>
         </div>
       </div>
-    </div>`;
-  main.appendChild(secDiv);
-  
-  // Save (localStorage backup + Supabase) — refresh first so a category created in
-  // another tab/session in the meantime isn't overwritten by this save.
-  const saved = await refreshSavedCache();
-  saved['__cat_' + catId] = { name, color, guide, desc, guideId };
-  const ok = await saveToDB(saved);
-  
-  closeModal('modal-add-cat');
-  go(guideId);
-  notifySaveResult(ok, '✓ Kategori "' + name + '" berhasil dibuat & tersimpan di Supabase!', '⚠️ Kategori dibuat lokal — gagal sync ke Supabase, cek koneksi');
+      <div class="process-block">
+        <div class="process-title">Panduan Langkah</div>
+        <div class="steps-card">
+          <div class="steps-header">Panduan DMK Group — ${name}</div>
+          <div class="add-step-row visible">
+            <button class="add-step-btn" onclick="openAddStep('${guideId}')">＋ Tambah Langkah Pertama</button>
+          </div>
+        </div>
+      </div>`;
+    main.appendChild(secDiv);
+    console.log('✅ Content section ditambahkan dengan ID:', 'sec-' + guideId);
+    
+    // Save (localStorage backup + Supabase) — refresh first so a category created in
+    // another tab/session in the meantime isn't overwritten by this save.
+    console.log('💾 Memulai proses penyimpanan...');
+    console.log('🔄 Refresh cache dari Supabase...');
+    const saved = await refreshSavedCache();
+    console.log('📦 Cache refreshed, total keys:', Object.keys(saved).length);
+    
+    // Add category to saved data
+    const categoryData = { name, color, guide, desc, guideId };
+    saved['__cat_' + catId] = categoryData;
+    console.log('📝 Category data ditambahkan ke cache dengan key:', '__cat_' + catId);
+    console.log('📊 Category data:', categoryData);
+    
+    // Save to DB
+    console.log('💾 Menyimpan ke database...');
+    const ok = await saveToDB(saved);
+    console.log('💾 Save result:', ok === true ? 'SUCCESS (Supabase)' : ok === false ? 'FAILED (localStorage only)' : 'DISABLED (localStorage only)');
+    
+    // Close modal and navigate
+    closeModal('modal-add-cat');
+    console.log('✅ Modal ditutup');
+    
+    go(guideId);
+    console.log('✅ Navigasi ke category baru:', guideId);
+    
+    // Show result notification
+    notifySaveResult(
+      ok, 
+      '✓ Kategori "' + name + '" berhasil dibuat & tersimpan di Supabase!', 
+      '⚠️ Kategori dibuat lokal — gagal sync ke Supabase. Ketik disableSupabaseSync() di console jika ingin gunakan localStorage saja.'
+    );
+    
+    console.log('✅ confirmAddCategory() selesai');
+    
+  } catch (error) {
+    console.error('❌ Error di confirmAddCategory():', error);
+    console.error('Stack trace:', error.stack);
+    alert('Gagal menyimpan kategori: ' + error.message + '\n\nCek console (F12) untuk detail error.');
+  } finally {
+    // Restore button state
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnText;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════
