@@ -4960,7 +4960,9 @@ function updateSupabaseStatus(connected) {
 window.resetSupabaseSync = function() {
   _supabaseDisabled = false;
   _consecutiveFailures = 0;
+  _savedCache = null;  // ── BUG FIX #6: Force fresh load dari Supabase ──
   localStorage.removeItem('_supabase_disabled');
+  localStorage.removeItem('_supabase_disabled_at');
   localStorage.removeItem('_supabase_failures');
   console.log('✅ Supabase sync re-enabled. Refresh halaman untuk efek penuh.');
   updateSupabaseStatus(false);
@@ -4970,14 +4972,93 @@ window.resetSupabaseSync = function() {
 window.disableSupabaseSync = function() {
   _supabaseDisabled = true;
   localStorage.setItem('_supabase_disabled', 'true');
+  localStorage.setItem('_supabase_disabled_at', Date.now().toString());
   console.log('⚠️ Supabase sync manually disabled. Data akan disimpan ke localStorage saja.');
   updateSupabaseStatus(false);
   alert('Supabase sync dinonaktifkan.\n\nData akan disimpan ke localStorage browser saja.');
 };
 
 console.log('💡 Helper functions available:');
-console.log('  - resetSupabaseSync()  : Re-enable Supabase sync');
-console.log('  - disableSupabaseSync(): Disable Supabase sync (localStorage only)');
+console.log('  - resetSupabaseSync()    : Re-enable Supabase sync & clear cache');
+console.log('  - disableSupabaseSync()  : Disable Supabase sync (localStorage only)');
+console.log('  - checkSupabaseTable()   : Cek status tabel app_data di Supabase');
+console.log('  - exportLocalData()      : Export data localStorage ke file JSON');
+
+// ── Cek apakah tabel app_data sudah terkonfigurasi dengan benar ──────────
+window.checkSupabaseTable = async function() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error('❌ Supabase tidak dikonfigurasi');
+    return;
+  }
+  console.log('🔍 Memeriksa tabel app_data di Supabase...');
+  try {
+    // Test 1: Bisa GET?
+    const getRes = await fetch(`${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}&select=app_id,data`, {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    if (!getRes.ok) {
+      const e = await getRes.text();
+      console.error('❌ GET gagal:', getRes.status, e);
+      if (getRes.status === 404 || e.includes('relation') || e.includes('does not exist')) {
+        console.error('❌ TABEL app_data TIDAK ADA di Supabase!');
+        console.error('💡 Jalankan SQL berikut di Supabase SQL Editor:');
+        console.error(`CREATE TABLE IF NOT EXISTS app_data (
+  id         BIGSERIAL PRIMARY KEY,
+  app_id     TEXT UNIQUE NOT NULL,
+  data       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_app_data_app_id ON app_data(app_id);
+ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "allow_all" ON app_data FOR ALL USING (true) WITH CHECK (true);
+INSERT INTO app_data (app_id, data) VALUES ('d365-dmk-v3', '{}') ON CONFLICT DO NOTHING;`);
+      }
+      return;
+    }
+    const rows = await getRes.json();
+    console.log(`✅ GET berhasil: ${rows.length} baris ditemukan untuk app_id="${APP_ID}"`);
+    if (!rows.length) console.warn('⚠️ Baris untuk app_id belum ada — akan dibuat saat save pertama');
+
+    // Test 2: Upsert test (tidak mengubah data)
+    const testData = rows[0]?.data || {};
+    const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ app_id: APP_ID, data: testData })
+    });
+    if (upsertRes.ok) {
+      console.log('✅ UPSERT test berhasil — tabel terkonfigurasi dengan benar!');
+      console.log('✅ Data akan tersimpan ke Supabase dengan benar.');
+    } else {
+      const e = await upsertRes.text();
+      console.error('❌ UPSERT test gagal:', upsertRes.status, e);
+      if (e.includes('42P10')) {
+        console.error('❌ Tabel tidak punya UNIQUE constraint pada kolom app_id!');
+        console.error('💡 Jalankan SQL ini untuk menambahkan constraint:');
+        console.error('ALTER TABLE app_data ADD CONSTRAINT app_data_app_id_key UNIQUE (app_id);');
+      }
+    }
+  } catch(e) {
+    console.error('❌ Error saat memeriksa tabel:', e.message);
+  }
+};
+
+// ── Export data localStorage ke file JSON untuk backup/debugging ──────────
+window.exportLocalData = function() {
+  const data = localStorage.getItem('d365_edits') || '{}';
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'd365-dmk-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  console.log('✅ Data localStorage di-export ke file JSON');
+};
 
 // ===== TEST SUPABASE STORAGE CONNECTION =====
 async function testSupabaseStorageConnection() {
@@ -5637,7 +5718,9 @@ async function resetImg(sid) {
 }
 
 async function saveEdits() {
-  const saved = getSaved();
+  // ── BUG FIX #3a: Ambil data terbaru dari Supabase sebelum merge perubahan
+  // editor, agar perubahan di tab lain / session lain tidak tertimpa. ────────
+  const saved = await refreshSavedCache();
   document.querySelectorAll('[id^="einput-lbl-"], [id^="einput-dsc-"]').forEach(input => {
     const match = input.id.match(/^einput-(lbl|dsc)-(.+)$/);
     if (!match) return;
@@ -5730,7 +5813,8 @@ function initEditor() {
 }
 
 async function saveAll() {
-  const saved = getSaved();
+  // ── BUG FIX #3b: Sama seperti saveEdits — ambil data fresh dari Supabase. ─
+  const saved = await refreshSavedCache();
   document.querySelectorAll('[id^="einput-lbl-"], [id^="einput-dsc-"]').forEach(input => {
     const match = input.id.match(/^einput-(lbl|dsc)-(.+)$/);
     if (!match) return;
@@ -5796,8 +5880,18 @@ const SUPABASE_URL = window._SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = window._SUPABASE_ANON_KEY || '';
 const APP_ID = 'd365-dmk-v3';
 let _savedCache = null;
-let _supabaseDisabled = localStorage.getItem('_supabase_disabled') === 'true';
-let _consecutiveFailures = parseInt(localStorage.getItem('_supabase_failures') || '0');
+// ── BUG FIX #4: Auto-reset disable flag setelah 30 menit ─────────────────
+// Flag lama yang disimpan permanent di localStorage menyebabkan Supabase
+// tidak pernah dicoba lagi meski sudah refresh page atau koneksi pulih.
+const _disabledAt = parseInt(localStorage.getItem('_supabase_disabled_at') || '0');
+const _disabledExpired = _disabledAt > 0 && (Date.now() - _disabledAt > 30 * 60 * 1000);
+if (_disabledExpired) {
+  localStorage.removeItem('_supabase_disabled');
+  localStorage.removeItem('_supabase_disabled_at');
+  localStorage.removeItem('_supabase_failures');
+}
+let _supabaseDisabled = !_disabledExpired && localStorage.getItem('_supabase_disabled') === 'true';
+let _consecutiveFailures = _disabledExpired ? 0 : parseInt(localStorage.getItem('_supabase_failures') || '0');
 
 async function getSavedAsync() {
   if (_savedCache !== null) return JSON.parse(JSON.stringify(_savedCache));
@@ -5875,10 +5969,15 @@ async function refreshSavedCache() {
 //          null  = Supabase not configured for this app (localStorage-only mode)
 async function saveToDB(data) {
   console.log('💾 saveToDB() called');
+
+  // ── BUG FIX #2: Update cache DULU (optimistic) agar getSaved() sinkron selama
+  // push berlangsung. Jika push gagal, cache tetap berisi data terbaru yang
+  // user edit — ini aman karena localStorage juga di-update di bawah.
+  // Yang penting: jangan cache data lama jika push baru gagal. ──────────────
   _savedCache = JSON.parse(JSON.stringify(data));
-  
+
   // Always save to localStorage as an immediate local backup
-  try { 
+  try {
     localStorage.setItem('d365_edits', JSON.stringify(data));
     console.log('✅ Data saved to localStorage');
   } catch(e) {
@@ -5925,128 +6024,123 @@ async function saveToDB(data) {
 async function pushToSupabaseWithRetry(data, attempt = 1) {
   const MAX_ATTEMPTS = 3;
   try {
-    // Validasi kredensial Supabase
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      console.error('❌ Supabase credentials missing:', { 
-        hasURL: !!SUPABASE_URL, 
-        hasKey: !!SUPABASE_ANON_KEY 
-      });
       throw new Error('Supabase credentials not configured');
     }
-    
-    console.log(`💾 Attempting to save to Supabase (attempt ${attempt}/${MAX_ATTEMPTS})...`);
-    console.log('📊 Data size:', JSON.stringify(data).length, 'bytes');
-    
-    // Update the existing row first. This works even if the `app_data` table has
-    // no unique constraint on app_id (an ON CONFLICT upsert would fail with
-    // "no unique or exclusion constraint" in that case, which silently dropped
-    // every text/label/desc save while images kept working because they go
-    // through the separate Storage API, not this table).
-    const patchUrl = `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`;
-    console.log('🔄 PATCH URL:', patchUrl);
-    
-    const patchRes = await fetch(patchUrl, {
-      method: 'PATCH',
+
+    console.log(`💾 Supabase upsert (attempt ${attempt}/${MAX_ATTEMPTS}), size: ${JSON.stringify(data).length} bytes`);
+
+    // ── BUG FIX #1: Gunakan UPSERT (POST + on_conflict) sebagai satu-satunya
+    // strategi simpan. Strategi lama (PATCH dulu, POST kalau kosong) gagal karena:
+    //   a) PATCH dengan Prefer:return=representation membutuhkan kolom app_id
+    //      memiliki UNIQUE constraint — jika tidak ada, response selalu 200 tapi
+    //      rows=0, lalu POST kedua gagal dengan "duplicate key" jika baris sudah ada.
+    //   b) Race condition: dua tab buka bersamaan, keduanya PATCH lalu POST → duplikat.
+    // Upsert PostgREST (resolution=merge-duplicates) menangani kedua skenario dengan
+    // satu request dan membutuhkan UNIQUE constraint pada app_id. ──────────────────
+    const upsertUrl = `${SUPABASE_URL}/rest/v1/app_data`;
+    const upsertRes = await fetch(upsertUrl, {
+      method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
-      body: JSON.stringify({ data })
+      body: JSON.stringify({ app_id: APP_ID, data })
     });
-    
-    console.log('📡 PATCH Response status:', patchRes.status, patchRes.statusText);
-    
-    if (!patchRes.ok) {
-      const errorText = await patchRes.text().catch(() => 'Unable to read error');
-      console.error('❌ PATCH failed:', errorText);
-      
-      // HTTP 500 = server error, kemungkinan tabel tidak ada atau RLS policy issue
-      if (patchRes.status === 500) {
-        console.error('🔥 HTTP 500: Kemungkinan penyebab:');
-        console.error('  1. Tabel app_data tidak ada di Supabase');
-        console.error('  2. Struktur kolom tidak sesuai (perlu: app_id:text, data:jsonb)');
-        console.error('  3. RLS (Row Level Security) policy terlalu ketat');
-        console.error('  4. Database constraint violation');
+
+    console.log('📡 Upsert response:', upsertRes.status, upsertRes.statusText);
+
+    if (!upsertRes.ok) {
+      const errorText = await upsertRes.text().catch(() => 'Unable to read error');
+      console.error('❌ Upsert failed:', errorText);
+
+      // ── BUG FIX #2: Jika upsert gagal karena tidak ada UNIQUE constraint
+      // (error kode 42P10 / "no unique or exclusion constraint"), fallback ke
+      // PATCH-then-POST manual agar tetap bekerja tanpa DDL change di Supabase ──
+      if (upsertRes.status === 400 && errorText.includes('42P10')) {
+        console.warn('⚠️ No unique constraint on app_id — falling back to PATCH+POST');
+        return await _patchThenPost(data, attempt, MAX_ATTEMPTS);
+      }
+
+      if (upsertRes.status === 500) {
+        console.error('🔥 HTTP 500 — Kemungkinan penyebab:');
+        console.error('  1. Tabel app_data belum dibuat di Supabase');
+        console.error('  2. Kolom tidak sesuai (harus: app_id TEXT UNIQUE, data JSONB)');
+        console.error('  3. RLS policy memblokir INSERT/UPDATE');
         console.error('');
-        console.error('💡 SOLUSI SEMENTARA: Ketik disableSupabaseSync() untuk mode localStorage saja');
-        console.error('');
-        console.error('💡 PERBAIKAN PERMANEN: Buat tabel di Supabase dengan SQL berikut:');
-        console.error('');
-        const sqlScript = `CREATE TABLE IF NOT EXISTS app_data (
-  id BIGSERIAL PRIMARY KEY,
-  app_id TEXT NOT NULL,
-  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+        console.error('💡 Jalankan SQL ini di Supabase SQL Editor:');
+        console.error(`CREATE TABLE IF NOT EXISTS app_data (
+  id         BIGSERIAL PRIMARY KEY,
+  app_id     TEXT UNIQUE NOT NULL,
+  data       JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
+CREATE INDEX IF NOT EXISTS idx_app_data_app_id ON app_data(app_id);
 ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all" ON app_data FOR ALL USING (true) WITH CHECK (true);`;
-        console.error(sqlScript);
-        console.error('');
+CREATE POLICY "allow_all" ON app_data FOR ALL USING (true) WITH CHECK (true);
+INSERT INTO app_data (app_id, data) VALUES ('d365-dmk-v3', '{}') ON CONFLICT DO NOTHING;`);
       }
-      
-      throw new Error(`HTTP ${patchRes.status} (update): ${errorText}`);
-    }
-    
-    const updatedRows = await patchRes.json().catch((e) => {
-      console.warn('⚠️ Could not parse PATCH response as JSON:', e);
-      return [];
-    });
-    
-    console.log('✅ PATCH result:', updatedRows.length, 'row(s) updated');
 
-    if (!Array.isArray(updatedRows) || !updatedRows.length) {
-      // No row existed yet for this app_id — insert the first one.
-      console.log('➕ No existing row found, inserting new record...');
-      const postUrl = `${SUPABASE_URL}/rest/v1/app_data`;
-      
-      const postRes = await fetch(postUrl, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({ app_id: APP_ID, data })
-      });
-      
-      console.log('📡 POST Response status:', postRes.status, postRes.statusText);
-      
-      if (!postRes.ok) {
-        const errorText = await postRes.text().catch(() => 'Unable to read error');
-        console.error('❌ POST failed:', errorText);
-        throw new Error(`HTTP ${postRes.status} (insert): ${errorText}`);
-      }
-      
-      console.log('✅ New record inserted successfully');
+      throw new Error(`HTTP ${upsertRes.status}: ${errorText}`);
     }
 
-    console.log('✅ Data saved to Supabase successfully!');
+    console.log('✅ Data saved to Supabase!');
     if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(true);
     return true;
+
   } catch (e) {
-    console.error(`❌ Supabase save failed (attempt ${attempt}/${MAX_ATTEMPTS}):`, e);
-    console.error('Error details:', {
-      message: e.message,
-      stack: e.stack,
-      name: e.name
-    });
-    
+    console.error(`❌ Supabase save failed (attempt ${attempt}/${MAX_ATTEMPTS}):`, e.message);
     if (attempt < MAX_ATTEMPTS) {
-      console.log(`⏳ Retrying in ${attempt} second(s)...`);
+      console.log(`⏳ Retrying in ${attempt}s...`);
       await new Promise(r => setTimeout(r, attempt * 1000));
-      // Retry with the freshest cached data in case something else changed meanwhile
       return pushToSupabaseWithRetry(_savedCache, attempt + 1);
     }
-    
-    console.error('❌ All retry attempts exhausted. Data saved locally only.');
+    console.error('❌ All retries exhausted — localStorage only.');
     if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(false);
     return false;
   }
+}
+
+// Fallback PATCH+POST untuk tabel tanpa UNIQUE constraint pada app_id
+async function _patchThenPost(data, attempt, MAX_ATTEMPTS) {
+  const patchUrl = `${SUPABASE_URL}/rest/v1/app_data?app_id=eq.${APP_ID}`;
+  const patchRes = await fetch(patchUrl, {
+    method: 'PATCH',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation,count=exact'
+    },
+    body: JSON.stringify({ data })
+  });
+  if (!patchRes.ok) throw new Error(`PATCH failed: HTTP ${patchRes.status}`);
+  // Check Content-Range to know if rows matched
+  const contentRange = patchRes.headers.get('Content-Range') || '';
+  const matchedRows = parseInt(contentRange.split('/')[1] || '0', 10);
+  if (matchedRows === 0) {
+    // Row doesn't exist — INSERT
+    const postRes = await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ app_id: APP_ID, data })
+    });
+    if (!postRes.ok) {
+      const e = await postRes.text().catch(() => '');
+      // If concurrent insert → ignore duplicate key error
+      if (!e.includes('23505')) throw new Error(`POST failed: HTTP ${postRes.status}: ${e}`);
+    }
+  }
+  if (typeof updateSupabaseStatus === 'function') updateSupabaseStatus(true);
+  return true;
 }
 
 // Shows a toast reflecting whether the save actually reached Supabase.
